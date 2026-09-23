@@ -1,6 +1,7 @@
 // Command API. Every client write goes through here: POST { command, params } with the user's token.
 import postgres from 'postgres';
 import { handleApi } from '../../../src/server/http.ts';
+import { expoPushSender } from '../../../src/server/push.ts';
 
 const sql = postgres(Deno.env.get('SUPABASE_DB_URL')!, { prepare: false, max: 5, onnotice: () => {} });
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -13,4 +14,6 @@ async function authenticate(token: string): Promise<string | null> {
   return typeof user?.id === 'string' ? user.id : null;
 }
 
-Deno.serve((req) => handleApi(req, { sql, authenticate, log: (entry) => console.log(JSON.stringify(entry)) }));
+const push = expoPushSender(fetch, Deno.env.get('EXPO_ACCESS_TOKEN') ?? undefined);
+
+Deno.serve((req) => handleApi(req, { sql, authenticate, push, log: (entry) => console.log(JSON.stringify(entry)) }));

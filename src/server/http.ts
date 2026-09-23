@@ -4,6 +4,7 @@ import { DomainError } from '../domain/index.ts';
 import { commands } from './commands.ts';
 import type { Sql } from './db.ts';
 import { runScheduledJobs } from './jobs.ts';
+import { deliverPendingPush, type PushSender } from './push.ts';
 
 export interface ApiDeps {
   sql: Sql;
@@ -12,6 +13,19 @@ export interface ApiDeps {
   now?: () => Date;
   random?: () => number;
   log?: (entry: Record<string, unknown>) => void;
+  /** Delivers stored notifications as push messages once a command or job has committed. */
+  push?: PushSender;
+}
+
+/** Push is best effort: a delivery failure never fails the command that created the notification. */
+async function pushAfterCommit(deps: Pick<ApiDeps, 'sql' | 'push' | 'log' | 'now'>): Promise<void> {
+  if (!deps.push) return;
+  try {
+    const sent = await deliverPendingPush(deps.sql, deps.push, deps.now?.() ?? new Date());
+    if (sent) deps.log?.({ level: 'info', push: sent });
+  } catch (err) {
+    deps.log?.({ level: 'error', push: 'failed', message: (err as Error)?.message });
+  }
 }
 
 const CORS = {
@@ -69,6 +83,7 @@ export async function handleApi(req: Request, deps: ApiDeps): Promise<Response> 
       handler({ tx, actorId: userId, now: deps.now?.() ?? new Date(), random: deps.random ?? Math.random }, params),
     );
     deps.log?.({ level: 'info', command: name, userId, ms: Date.now() - started });
+    await pushAfterCommit(deps);
     return json(200, { ok: true, data: data ?? null });
   } catch (err) {
     return errorResponse(err, deps.log, { command: name, userId });
@@ -83,6 +98,7 @@ export async function handleJobs(req: Request, deps: Omit<ApiDeps, 'authenticate
       runScheduledJobs({ tx, now: deps.now?.() ?? new Date(), random: deps.random ?? Math.random }),
     );
     deps.log?.({ level: 'info', job: 'scheduled', ...data });
+    await pushAfterCommit(deps);
     return json(200, { ok: true, data });
   } catch (err) {
     return errorResponse(err, deps.log, { job: 'scheduled' });

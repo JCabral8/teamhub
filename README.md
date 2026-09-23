@@ -9,14 +9,16 @@ The V1 specification lives in [`docs/spec/`](docs/spec). Where the spec left a g
 | Path | What it holds |
 |---|---|
 | `src/domain/` | Pure TypeScript business rules: Positions, roster capacity, attendance, scheduling, callups, governance, statistics, notification text. No I/O. Shared by the app and the server. |
-| `src/server/` | Services that load state, apply the domain rules and persist the result inside one transaction. `commands.ts` is the full command API. |
+| `src/server/` | Services that load state, apply the domain rules and persist the result inside one transaction. `commands.ts` is the full command API. `push.ts` delivers notifications to phones. |
+| `src/app/` | Expo Router screens: Home, Schedule, Team and Other tabs, Event detail, Event create and edit, Team Settings, join, profile, statistics. |
+| `src/features/` | Larger screen parts: Event attendance and roster, Team Settings sections, joining a Team. |
+| `src/lib/` | Supabase client, the `api()` command client, auth and Team context, read queries and hooks. |
+| `src/ui/` | Shared components, calendar, formatting and design tokens. |
 | `supabase/migrations/` | Schema, constraints, row-level security, realtime publication and the per-minute job schedule. |
 | `supabase/functions/api` | Edge Function for every client write: `POST { command, params }` with the user's access token. |
-| `supabase/functions/jobs` | Edge Function that pg_cron calls every minute for scheduled releases, "ready to send" notices and reminders. |
+| `supabase/functions/jobs` | Edge Function that pg_cron calls every minute for scheduled releases, "ready to send" notices, reminders and push delivery. |
 | `tests/domain/` | Unit tests for the domain rules. |
 | `tests/server/` | Integration tests that run the real migrations and services against Postgres. Together with the unit tests they cover all 40 scenarios in spec §61. |
-
-The Expo app screens come next, built on the same domain module.
 
 ## Development
 
@@ -30,12 +32,23 @@ npm test                     # everything
 
 The database tests create and drop a scratch database. They connect to `TEST_DATABASE_URL`, which defaults to `postgres://postgres:postgres@localhost:5432/postgres`.
 
+### Running the app
+
+1. Copy `.env.example` to `.env` and fill in the Supabase project URL and anon key.
+2. `npx expo start`, then open it in Expo Go, a simulator, or the browser (`w`).
+3. Push notifications need a development build and an EAS project id (`npx eas-cli@latest init` adds it to `app.json`). Without one the app works and notifications stay in the in-app list.
+
+Join links use the `teamhub://join/<code>` scheme, so a shared link opens the join screen with the code filled in.
+
 ## Deploying the backend
 
 1. Create a Supabase project and link it: `npx supabase link --project-ref <ref>`.
 2. Apply migrations: `npx supabase db push`.
 3. Deploy functions: `npx supabase functions deploy api` and `npx supabase functions deploy jobs`.
 4. For scheduled releases, add two Vault secrets in the project: `project_url` (for example `https://<ref>.supabase.co`) and `service_role_key`. The per-minute job reads them on every run, so nothing else needs re-running.
+5. Optional: if the Expo project has enhanced push security turned on, set `EXPO_ACCESS_TOKEN` as a function secret (`npx supabase secrets set EXPO_ACCESS_TOKEN=...`).
+
+Push messages go out right after the command that created them, and the per-minute job retries anything left over from the last day.
 
 ## Client rules
 
