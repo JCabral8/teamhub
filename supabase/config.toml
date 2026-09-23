@@ -1,0 +1,8 @@
+project_id = "teamhub"
+
+[functions.api]
+verify_jwt = true
+
+[functions.jobs]
+# Authorized inside the function with the service role key.
+verify_jwt = false
