@@ -43,7 +43,7 @@ export default function EditEvent() {
     setTime(localTime(start, team.timezone));
   }, [data, team, form]);
 
-  if (loading && !data) return <Loading />;
+  if (teams.loading || (loading && !data)) return <Loading />;
   if (!data || !team) return <Empty title="Event not found" body={loadError ?? undefined} />;
   if (!isManagerOf(membership)) return <Empty title="Only Managers can edit Events" />;
   if (!form || !date) return <Loading />;

@@ -33,6 +33,13 @@
     ],
     "experiments": {
       "typedRoutes": false
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "434635d6-ad44-43bb-b117-15f6dd4cc0ab"
+      }
+    },
+    "owner": "gimmix8s-team"
   }
 }

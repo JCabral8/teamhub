@@ -5,21 +5,19 @@ import { getSchedulableDateRange, getScheduleTimeOptions, isSchedulableDate, loc
 import { api } from '../../lib/api';
 import type { Team, TeamEvent } from '../../lib/data';
 import { useAction } from '../../lib/hooks';
+import { shareOrCopy } from '../../lib/share';
 import { Button, ButtonRow, Card, Chips, ErrorText, Notice, Sheet } from '../../ui/components';
-import { eventWhen, longDate } from '../../ui/format';
+import { eventLink, eventTitle, eventWhen, longDate } from '../../ui/format';
 import { MonthCalendar } from '../../ui/MonthCalendar';
 import { TimeField } from '../../ui/TimeField';
-import { font, space } from '../../ui/theme';
+import { font, space, toneColors } from '../../ui/theme';
 
 export function SendAttendance({ event, team, onChanged }: { event: TeamEvent; team: Team; onChanged: () => void }) {
   // One sheet with two steps: stacking a second modal while the first closes is unreliable on iOS.
   const [step, setStep] = useState<'menu' | 'schedule' | null>(null);
   const { busy, error, run } = useAction();
 
-  if (event.release_state === 'RELEASED') {
-    // No timestamp of when it was sent (spec §28).
-    return <Notice tone="positive" title="Attendance Sent">Players have been notified</Notice>;
-  }
+  if (event.release_state === 'RELEASED') return <AttendanceSent event={event} team={team} />;
 
   const sendNow = () =>
     run(async () => {
@@ -71,6 +69,24 @@ export function SendAttendance({ event, team, onChanged }: { event: TeamEvent; t
         )}
       </Sheet>
     </Card>
+  );
+}
+
+/**
+ * No timestamp of when it was sent (spec §28). Players see the request inside TeamHub, and a link in
+ * the team chat is how they hear about it when there's no phone app to push to.
+ */
+function AttendanceSent({ event, team }: { event: TeamEvent; team: Team }) {
+  const [copied, setCopied] = useState(false);
+  const share = async () => {
+    const message = `Attendance is open for ${eventTitle(event)}, ${eventWhen(event.starts_at, team.timezone)}. Tap to answer: ${eventLink(event.id)}`;
+    if (await shareOrCopy(message)) setCopied(true);
+  };
+  return (
+    <Notice tone="positive" title="Attendance Sent">
+      <Text style={[font.small, { color: toneColors.positive.fg }]}>Players can answer in TeamHub. Share the link in your team chat so they know.</Text>
+      <Button label={copied ? 'Message Copied' : 'Share to Team Chat'} icon={copied ? 'checkmark' : 'share-outline'} variant="secondary" onPress={() => void share()} />
+    </Notice>
   );
 }
 

@@ -28,6 +28,7 @@ export default function SettingsSection() {
   const meta = SETTINGS_SECTIONS.find((s) => s.key === section);
   const Section = SECTIONS[section];
 
+  if (teams.loading) return <Loading />;
   if (!membership || !isManagerOf(membership) || !meta || !Section) return <Empty title="Team Settings are for Managers" />;
   if (loading && !data) return <Loading />;
   if (!data) return <Empty title="Could not load settings" body={error ?? undefined} />;

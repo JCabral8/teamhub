@@ -118,7 +118,7 @@ function MemberSheet({
   positionOptions: { value: string; label: string }[];
   reload: () => Promise<void>;
 }) {
-  const { busy, error, run } = useAction();
+  const { busy, error, setError, run } = useAction();
   // Confirmation happens inside the sheet: stacking a second modal is unreliable on iOS.
   const [confirming, setConfirming] = useState<'transfer' | 'remove' | null>(null);
   if (!member) return null;
@@ -126,6 +126,7 @@ function MemberSheet({
 
   const close = () => {
     setConfirming(null);
+    setError(null);
     onClose();
   };
   const exec = (fn: () => Promise<unknown>) =>

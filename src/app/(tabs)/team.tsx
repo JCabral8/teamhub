@@ -1,11 +1,12 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Share, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { api } from '../../lib/api';
 import { loadEvents, loadTeamDetail, type TeamMember } from '../../lib/data';
 import { useAction, useLoader, useRealtime } from '../../lib/hooks';
+import { shareOrCopy } from '../../lib/share';
 import { isManagerOf, useTeams } from '../../lib/teams';
-import { Badge, Button, Card, Chips, Empty, ErrorText, ListRow, Loading, Screen, SectionLabel, Segmented, useConfirm } from '../../ui/components';
+import { Badge, Button, Card, Chips, Empty, ErrorText, ListRow, Loading, Notice, Screen, SectionLabel, Segmented, useConfirm } from '../../ui/components';
 import { EventRow } from '../../ui/EventRow';
 import { eventTitle, eventWhen, joinLink } from '../../ui/format';
 import { colors, font, space } from '../../ui/theme';
@@ -19,6 +20,7 @@ export default function TeamScreen() {
   const team = membership?.team;
   const manager = isManagerOf(membership);
   const [tab, setTab] = useState<Tab>('roster');
+  const [copied, setCopied] = useState(false);
   const leave = useAction();
   const confirm = useConfirm();
 
@@ -33,7 +35,14 @@ export default function TeamScreen() {
   if (teams.loading) return <Loading />;
   if (!membership || !team) {
     return (
-      <Screen>
+      <Screen onRefresh={teams.reload}>
+        {teams.memberships
+          .filter((m) => m.status === 'PENDING')
+          .map((m) => (
+            <Notice key={m.id} tone="attention" title={`Waiting to join ${m.team.name}`}>
+              A Manager needs to approve your request before you can see the Team.
+            </Notice>
+          ))}
         <Empty title="No Team yet" body="Join a Team with your Manager's link, or create one." />
         <Button label="Join a Team" onPress={() => router.push('/team/join')} />
         <Button label="Create a Team" variant="secondary" onPress={() => router.push('/team/new')} />
@@ -47,6 +56,11 @@ export default function TeamScreen() {
   const members = (data?.detail.members ?? []).filter((m) => m.status === 'ACTIVE');
   const pendingCount = (data?.detail.members ?? []).filter((m) => m.status === 'PENDING').length;
   const openEvent = (id: string) => router.push({ pathname: '/event/[id]', params: { id } });
+
+  const shareLink = async () => {
+    const link = joinLink(team.join_code);
+    if (await shareOrCopy(`Join ${team.name} on TeamHub: ${link}`, link)) setCopied(true);
+  };
 
   const onLeave = async () => {
     const ok = await confirm.ask(`Leave ${team.name}?`, 'You will stop receiving attendance requests for this Team.', 'Leave Team', true);
@@ -145,11 +159,7 @@ export default function TeamScreen() {
               <Text selectable style={[font.body, { color: colors.primary }]}>
                 {joinLink(team.join_code)}
               </Text>
-              <Button
-                label="Share Join Link"
-                icon="share-outline"
-                onPress={() => void Share.share({ message: `Join ${team.name} on TeamHub: ${joinLink(team.join_code)}` }).catch(() => undefined)}
-              />
+              <Button label={copied ? 'Link Copied' : 'Share Join Link'} icon={copied ? 'checkmark' : 'share-outline'} onPress={() => void shareLink()} />
             </Card>
           )}
           {manager && (

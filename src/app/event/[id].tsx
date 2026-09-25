@@ -36,7 +36,7 @@ export default function EventScreen() {
     () => void reload(),
   );
 
-  if (loading && !data) return <Loading />;
+  if (teams.loading || (loading && !data)) return <Loading />;
   if (!data) return <Empty title="Event not found" body={error ?? 'It may have been deleted.'} />;
 
   const { detail } = data;

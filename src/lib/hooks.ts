@@ -38,6 +38,8 @@ export function useLoader<T>(load: () => Promise<T>, deps: unknown[]): AsyncStat
   return { data, error, loading, reload };
 }
 
+let channelSeq = 0;
+
 /**
  * Re-runs `onChange` whenever rows change in the given tables for this filter (spec §58). Realtime
  * respects row-level security, so manager-only tables only stream to Managers.
@@ -49,7 +51,9 @@ export function useRealtime(channel: string, subscriptions: { table: string; fil
   useEffect(() => {
     const subs = JSON.parse(key) as { table: string; filter?: string }[];
     if (!subs.length) return;
-    let ch = supabase.channel(channel);
+    // supabase.channel() returns an existing channel with the same topic, and removeChannel() is
+    // async, so a quick remount would get the old, already-subscribed channel. Keep topics unique.
+    let ch = supabase.channel(`${channel}:${++channelSeq}`);
     for (const s of subs) {
       ch = ch.on('postgres_changes', { event: '*', schema: 'public', table: s.table, filter: s.filter }, () => handler.current());
     }
