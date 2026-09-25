@@ -117,6 +117,9 @@ export default function TeamScreen() {
 
       {tab === 'roster' && (
         <>
+          {manager && (
+            <Button label={copied ? 'Join Link Copied' : 'Invite Players'} icon={copied ? 'checkmark' : 'person-add-outline'} onPress={() => void shareLink()} />
+          )}
           {manager && pendingCount > 0 && (
             <Button
               label={`${pendingCount} join ${pendingCount === 1 ? 'request' : 'requests'} to review`}
