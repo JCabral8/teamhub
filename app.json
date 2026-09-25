@@ -29,6 +29,14 @@
       [
         "expo-notifications",
         {}
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "TeamHub uses your photos so Managers can choose a Team logo.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
       ]
     ],
     "experiments": {

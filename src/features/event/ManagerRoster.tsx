@@ -16,6 +16,8 @@ import { useAction } from '../../lib/hooks';
 import { Badge, Button, ButtonRow, Card, ErrorText, ListRow, Notice, SectionLabel, Sheet, Stepper } from '../../ui/components';
 import { STANDING_DISPLAY } from '../../ui/format';
 import { colors, font, space } from '../../ui/theme';
+import { useAccent } from '../../ui/accent';
+import { Avatar } from '../../ui/Avatar';
 
 export function ManagerRoster({ detail, team, onChanged }: { detail: EventDetail; team: TeamDetail; onChanged: () => void }) {
   const { event, roster, requirements, invites } = detail;
@@ -112,6 +114,7 @@ export function ManagerRoster({ detail, team, onChanged }: { detail: EventDetail
                   <ListRow
                     first={i === 0}
                     title={e.displayName}
+                    leading={<Avatar name={e.displayName} path={detail.avatars[e.userId]} />}
                     subtitle={[e.source === 'CALLUP' && 'Callup', e.responseOrigin === 'SYSTEM_AVAILABILITY' && 'Marked unavailable', e.response === 'NO' && e.reason]
                       .filter(Boolean)
                       .join(' · ')}
@@ -183,6 +186,7 @@ function AddPlayerSheet({ visible, onClose, detail, team, onAdded }: { visible: 
   const onEvent = new Set(detail.roster.map((r) => r.userId));
   const candidates = team.members.filter((m) => m.status === 'ACTIVE' && !onEvent.has(m.user_id));
   const [chosen, setChosen] = useState<string | null>(null);
+  const accent = useAccent();
   const { busy, error, setError, run } = useAction();
   const close = () => {
     setChosen(null);
@@ -206,8 +210,9 @@ function AddPlayerSheet({ visible, onClose, detail, team, onAdded }: { visible: 
               <ListRow
                 first={i === 0}
                 title={m.display_name}
+                leading={<Avatar name={m.display_name} path={m.avatar_path} />}
                 subtitle={m.roster_role === 'CALLUP' ? 'Callup' : m.roster_role === 'NONE' ? 'Not on the default roster' : null}
-                right={chosen === m.id ? <Ionicons name="checkmark-circle" size={22} color={colors.primary} /> : undefined}
+                right={chosen === m.id ? <Ionicons name="checkmark-circle" size={22} color={accent.ink} /> : undefined}
               />
             </Pressable>
           ))}

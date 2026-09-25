@@ -3,6 +3,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { addDays, localDate } from '../domain/index.ts';
+import { useAccent } from './accent';
 import { deviceTimeZone } from './format';
 import { colors, font, radius, space } from './theme';
 
@@ -47,6 +48,7 @@ export function MonthCalendar({
   /** YYYY-MM-DD to mark as today; defaults to the device's date. */
   today?: string;
 }) {
+  const a = useAccent();
   const todayKey = today ?? localDate(new Date(), deviceTimeZone());
   const [month, setMonth] = useState(monthKey(initialDate));
   const [y, m] = month.split('-').map(Number);
@@ -62,13 +64,13 @@ export function MonthCalendar({
     <View style={styles.wrap}>
       <View style={styles.header}>
         <Pressable accessibilityRole="button" accessibilityLabel="Previous month" hitSlop={10} onPress={() => setMonth(shiftMonth(month, -1))}>
-          <Ionicons name="chevron-back" size={22} color={colors.primary} />
+          <Ionicons name="chevron-back" size={22} color={a.ink} />
         </Pressable>
         <Text style={font.heading}>
           {MONTHS[m - 1]} {y}
         </Text>
         <Pressable accessibilityRole="button" accessibilityLabel="Next month" hitSlop={10} onPress={() => setMonth(shiftMonth(month, 1))}>
-          <Ionicons name="chevron-forward" size={22} color={colors.primary} />
+          <Ionicons name="chevron-forward" size={22} color={a.ink} />
         </Pressable>
       </View>
       <View style={styles.row}>
@@ -98,24 +100,24 @@ export function MonthCalendar({
                 <View
                   style={[
                     styles.day,
-                    mark?.highlight && styles.dayHighlight,
+                    mark?.highlight && [styles.dayHighlight, { borderColor: a.accent }],
                     mark?.unavailable && styles.dayUnavailable,
-                    sel && styles.daySelected,
+                    sel && { backgroundColor: a.accent },
                   ]}
                 >
                   <Text
                     style={[
                       styles.dayText,
-                      date === todayKey && styles.dayTextToday,
+                      date === todayKey && [styles.dayTextToday, { color: a.ink }],
                       disabled && styles.dayTextDisabled,
                       mark?.unavailable && styles.dayTextUnavailable,
-                      sel && styles.dayTextSelected,
+                      sel && [styles.dayTextSelected, { color: a.onAccent }],
                     ]}
                   >
                     {Number(date.slice(8))}
                   </Text>
                 </View>
-                <View style={[styles.dot, { backgroundColor: mark?.dot ? colors.primary : 'transparent' }]} />
+                <View style={[styles.dot, { backgroundColor: mark?.dot ? a.accent : 'transparent' }]} />
               </Pressable>
             );
           })}
@@ -132,13 +134,12 @@ const styles = StyleSheet.create({
   weekday: { flex: 1, textAlign: 'center', fontSize: 12, fontWeight: '600', color: colors.textFaint },
   cell: { flex: 1, alignItems: 'center', paddingVertical: 2 },
   day: { width: 36, height: 36, borderRadius: radius.pill, alignItems: 'center', justifyContent: 'center' },
-  dayHighlight: { borderWidth: 2, borderColor: colors.primary },
+  dayHighlight: { borderWidth: 2 },
   dayUnavailable: { backgroundColor: colors.negativeSoft },
-  daySelected: { backgroundColor: colors.primary },
   dayText: { fontSize: 15, color: colors.text },
-  dayTextToday: { color: colors.primary, fontWeight: '700' },
+  dayTextToday: { fontWeight: '700' },
   dayTextDisabled: { color: colors.disabled },
   dayTextUnavailable: { color: colors.negative, textDecorationLine: 'line-through' },
-  dayTextSelected: { color: colors.primaryText, fontWeight: '700', textDecorationLine: 'none' },
+  dayTextSelected: { fontWeight: '700', textDecorationLine: 'none' },
   dot: { width: 5, height: 5, borderRadius: 3, marginTop: 2 },
 });

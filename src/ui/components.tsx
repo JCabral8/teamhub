@@ -17,6 +17,8 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAccent } from './accent';
+import type { AccentPalette } from './color';
 import { colors, font, radius, space, toneColors, type Tone } from './theme';
 
 export type IconName = ComponentProps<typeof Ionicons>['name'];
@@ -75,7 +77,7 @@ export function Button({
   icon?: IconName;
   style?: StyleProp<ViewStyle>;
 }) {
-  const v = buttonVariants[variant];
+  const v = buttonVariants(useAccent())[variant];
   const inactive = disabled || busy;
   return (
     <Pressable
@@ -97,12 +99,18 @@ export function Button({
   );
 }
 
-const buttonVariants: Record<ButtonVariant, { bg: string; fg: string; border: string }> = {
-  primary: { bg: colors.primary, fg: colors.primaryText, border: colors.primary },
-  secondary: { bg: colors.surface, fg: colors.primary, border: colors.border },
+const buttonVariants = (a: AccentPalette): Record<ButtonVariant, { bg: string; fg: string; border: string }> => ({
+  primary: { bg: a.accent, fg: a.onAccent, border: a.accent },
+  secondary: { bg: colors.surface, fg: a.ink, border: colors.border },
   danger: { bg: colors.surface, fg: colors.negative, border: colors.negativeSoft },
-  ghost: { bg: 'transparent', fg: colors.primary, border: 'transparent' },
-};
+  ghost: { bg: 'transparent', fg: a.ink, border: 'transparent' },
+});
+
+/** Tone colours, with 'primary' following the Team accent. */
+function useTone(tone: Tone): { fg: string; bg: string } {
+  const a = useAccent();
+  return tone === 'primary' ? { fg: a.ink, bg: a.soft } : toneColors[tone];
+}
 
 export function ButtonRow({ children }: { children: ReactNode }) {
   return <View style={styles.buttonRow}>{children}</View>;
@@ -188,6 +196,7 @@ export function Chips<T extends string>({
   value: T | null;
   onChange: (value: T) => void;
 }) {
+  const a = useAccent();
   return (
     <View style={styles.chips}>
       {options.map((o) => {
@@ -198,9 +207,9 @@ export function Chips<T extends string>({
             accessibilityRole="radio"
             accessibilityState={{ checked: active }}
             onPress={() => onChange(o.value)}
-            style={[styles.chip, active && styles.chipActive]}
+            style={[styles.chip, active && { backgroundColor: a.accent, borderColor: a.accent }]}
           >
-            <Text style={[styles.chipText, active && styles.chipTextActive]}>{o.label}</Text>
+            <Text style={[styles.chipText, active && { color: a.onAccent, fontWeight: '600' }]}>{o.label}</Text>
           </Pressable>
         );
       })}
@@ -209,7 +218,7 @@ export function Chips<T extends string>({
 }
 
 export function Badge({ label, tone = 'neutral', style }: { label: string; tone?: Tone; style?: StyleProp<ViewStyle> }) {
-  const t = toneColors[tone];
+  const t = useTone(tone);
   return (
     <View style={[styles.badge, { backgroundColor: t.bg }, style]}>
       <Text style={[styles.badgeText, { color: t.fg }]}>{label}</Text>
@@ -223,6 +232,7 @@ export function ListRow({
   right,
   onPress,
   icon,
+  leading,
   first,
 }: {
   title: string;
@@ -230,11 +240,14 @@ export function ListRow({
   right?: ReactNode;
   onPress?: () => void;
   icon?: IconName;
+  /** Shown before the title in place of an icon, such as a profile picture. */
+  leading?: ReactNode;
   first?: boolean;
 }) {
   const content = (
     <>
       {icon && <Ionicons name={icon} size={20} color={colors.textMuted} style={{ marginRight: space.md }} />}
+      {leading && <View style={{ marginRight: space.md }}>{leading}</View>}
       <View style={{ flex: 1 }}>
         <Text style={font.body} numberOfLines={1}>
           {title}
@@ -260,18 +273,20 @@ export function ListRow({
 }
 
 export function ToggleRow({ label, hint, value, onChange }: { label: string; hint?: string; value: boolean; onChange: (v: boolean) => void }) {
+  const a = useAccent();
   return (
     <View style={styles.toggleRow}>
       <View style={{ flex: 1 }}>
         <Text style={font.body}>{label}</Text>
         {hint ? <Text style={font.small}>{hint}</Text> : null}
       </View>
-      <Switch value={value} onValueChange={onChange} trackColor={{ true: colors.primary, false: colors.disabled }} thumbColor={colors.surface} />
+      <Switch value={value} onValueChange={onChange} trackColor={{ true: a.accent, false: colors.disabled }} thumbColor={colors.surface} />
     </View>
   );
 }
 
 export function Stepper({ value, onChange, min = 0, max = 99, label }: { value: number; onChange: (v: number) => void; min?: number; max?: number; label: string }) {
+  const a = useAccent();
   return (
     <View style={styles.stepper}>
       <Pressable
@@ -281,7 +296,7 @@ export function Stepper({ value, onChange, min = 0, max = 99, label }: { value: 
         onPress={() => onChange(Math.max(min, value - 1))}
         style={[styles.stepperButton, value <= min && styles.buttonDisabled]}
       >
-        <Ionicons name="remove" size={18} color={colors.primary} />
+        <Ionicons name="remove" size={18} color={a.ink} />
       </Pressable>
       <Text style={styles.stepperValue} accessibilityLabel={`${label} ${value}`}>
         {value}
@@ -293,14 +308,14 @@ export function Stepper({ value, onChange, min = 0, max = 99, label }: { value: 
         onPress={() => onChange(Math.min(max, value + 1))}
         style={[styles.stepperButton, value >= max && styles.buttonDisabled]}
       >
-        <Ionicons name="add" size={18} color={colors.primary} />
+        <Ionicons name="add" size={18} color={a.ink} />
       </Pressable>
     </View>
   );
 }
 
 export function Notice({ tone = 'neutral', title, children }: { tone?: Tone; title?: string; children?: ReactNode }) {
-  const t = toneColors[tone];
+  const t = useTone(tone);
   return (
     <View style={[styles.notice, { backgroundColor: t.bg }]}>
       {title ? <Text style={[font.body, { fontWeight: '600', color: tone === 'neutral' ? colors.text : t.fg }]}>{title}</Text> : null}
@@ -319,9 +334,10 @@ export function ErrorText({ error }: { error: string | null | undefined }) {
 }
 
 export function Loading() {
+  const a = useAccent();
   return (
     <View style={styles.center}>
-      <ActivityIndicator color={colors.primary} />
+      <ActivityIndicator color={a.ink} />
     </View>
   );
 }
@@ -428,9 +444,7 @@ export const styles = StyleSheet.create({
   segmentTextActive: { color: colors.text, fontWeight: '600' },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: space.sm },
   chip: { paddingVertical: space.sm, paddingHorizontal: space.md, borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.surface },
-  chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipText: { fontSize: 14, color: colors.text },
-  chipTextActive: { color: colors.primaryText, fontWeight: '600' },
   badge: { paddingHorizontal: space.sm, paddingVertical: 2, borderRadius: radius.pill },
   badgeText: { fontSize: 12, fontWeight: '600' },
   listRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: space.md, minHeight: 48 },

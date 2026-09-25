@@ -2,6 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { localDate, localTime, standingOf } from '../domain/index.ts';
 import type { MyRosterLine, TeamEvent } from '../lib/data';
+import { paletteFor, useAccent } from './accent';
 import { Badge } from './components';
 import { STANDING_DISPLAY, clock, eventTitle } from './format';
 import { colors, font, radius, space } from './theme';
@@ -17,6 +18,7 @@ export function EventRow({
   event,
   timezone,
   teamName,
+  accentColor,
   myLine,
   onPress,
   first,
@@ -24,10 +26,14 @@ export function EventRow({
   event: TeamEvent;
   timezone: string;
   teamName?: string;
+  /** The Event's Team colour, for lists that mix Teams. Otherwise the surrounding accent. */
+  accentColor?: string | null;
   myLine?: MyRosterLine;
   onPress: () => void;
   first?: boolean;
 }) {
+  const surrounding = useAccent();
+  const a = accentColor !== undefined ? paletteFor(accentColor) : surrounding;
   const at = new Date(event.starts_at);
   const date = localDate(at, timezone);
   const [y, m, d] = date.split('-').map(Number);
@@ -40,9 +46,9 @@ export function EventRow({
       onPress={onPress}
       style={({ pressed }) => [styles.row, !first && styles.divider, pressed && { opacity: 0.7 }]}
     >
-      <View style={styles.dateBlock}>
-        <Text style={styles.month}>{MONTHS[m - 1]}</Text>
-        <Text style={styles.day}>{d}</Text>
+      <View style={[styles.dateBlock, { backgroundColor: a.soft }]}>
+        <Text style={[styles.month, { color: a.ink }]}>{MONTHS[m - 1]}</Text>
+        <Text style={[styles.day, { color: a.ink }]}>{d}</Text>
       </View>
       <View style={{ flex: 1, gap: 2 }}>
         <Text style={[font.body, { fontWeight: '600' }]} numberOfLines={1}>
@@ -61,7 +67,7 @@ export function EventRow({
 const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md },
   divider: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
-  dateBlock: { width: 48, alignItems: 'center', paddingVertical: space.xs, borderRadius: radius.md, backgroundColor: colors.primarySoft },
-  month: { fontSize: 11, fontWeight: '700', color: colors.primary },
-  day: { fontSize: 20, fontWeight: '700', color: colors.primary },
+  dateBlock: { width: 48, alignItems: 'center', paddingVertical: space.xs, borderRadius: radius.md },
+  month: { fontSize: 11, fontWeight: '700' },
+  day: { fontSize: 20, fontWeight: '700' },
 });

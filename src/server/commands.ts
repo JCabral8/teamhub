@@ -51,6 +51,8 @@ export const commands: Record<string, Handler> = {
       ...(v.has(p, 'callupSelectionMethod') && {
         callupSelectionMethod: v.oneOf(p, 'callupSelectionMethod', ['RANDOMIZED_ROTATION', 'PREDETERMINED_SEQUENCE'] as const),
       }),
+      ...(v.has(p, 'accentColor') && { accentColor: v.hexColor(p, 'accentColor') }),
+      ...(v.has(p, 'logoPath') && { logoPath: v.text(p, 'logoPath', { max: 200, optional: true }) }),
     }),
   regenerateJoinCode: (ctx, p) => teams.regenerateJoinCode(ctx, v.uuid(p, 'teamId')),
   requestToJoin: (ctx, p) => teams.requestToJoin(ctx, v.text(p, 'joinCode', { max: 64 })),

@@ -31,6 +31,8 @@ export interface TeamRow {
   callup_selection_method: CallupSelectionMethod;
   goalie_enabled: boolean;
   join_code: string;
+  accent_color: string | null;
+  logo_path: string | null;
 }
 
 export async function loadTeam(tx: Tx, teamId: string, lock = false): Promise<TeamRow> {

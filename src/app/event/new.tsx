@@ -11,6 +11,7 @@ import { longDate } from '../../ui/format';
 import { MonthCalendar } from '../../ui/MonthCalendar';
 import { TimeField } from '../../ui/TimeField';
 import { font, space } from '../../ui/theme';
+import { TeamAccent } from '../../ui/TeamAccent';
 
 type CreateResult = { eventId: string; releaseDecisionRequired: boolean };
 
@@ -79,44 +80,46 @@ export default function NewEvent() {
   };
 
   return (
-    <Screen>
-      {managed.length > 1 && (
-        <Chips options={managed.map((m) => ({ value: m.team.id, label: m.team.name }))} value={teamId} onChange={setTeamId} />
-      )}
-      <Card>
-        <EventForm value={form} onChange={setForm} team={team} />
-      </Card>
-      <Card>
-        <Segmented
-          options={[
-            { value: 'single', label: 'One Date' },
-            { value: 'bulk', label: 'Multiple Dates' },
-          ]}
-          value={mode}
-          onChange={setMode}
+    <TeamAccent color={team.accent_color}>
+      <Screen>
+        {managed.length > 1 && (
+          <Chips options={managed.map((m) => ({ value: m.team.id, label: m.team.name }))} value={teamId} onChange={setTeamId} />
+        )}
+        <Card>
+          <EventForm value={form} onChange={setForm} team={team} />
+        </Card>
+        <Card>
+          <Segmented
+            options={[
+              { value: 'single', label: 'One Date' },
+              { value: 'bulk', label: 'Multiple Dates' },
+            ]}
+            value={mode}
+            onChange={setMode}
+          />
+          {mode === 'bulk' && <Text style={font.small}>Tap each date to add the same Event on all of them.</Text>}
+          <MonthCalendar
+            initialDate={today}
+            selected={mode === 'single' ? date : dates}
+            isDisabled={(d) => d < today}
+            onSelect={mode === 'single' ? setDate : toggleDate}
+          />
+          <View style={{ gap: space.xs }}>
+            {mode === 'single' && date && <Text style={font.heading}>{longDate(date)}</Text>}
+            {mode === 'bulk' && dates.size > 0 && <Text style={font.heading}>{`${dates.size} ${dates.size === 1 ? 'date' : 'dates'} selected`}</Text>}
+          </View>
+          <TimeField label="Start time" value={time} onChange={setTime} hint={`Times are in the Team's time zone (${team.timezone}).`} />
+        </Card>
+        <ErrorText error={error} />
+        <Button label={mode === 'bulk' && dates.size > 1 ? `Create ${dates.size} Events` : 'Create Event'} busy={busy && !needDecision.length} onPress={() => void submit()} />
+        <ReleaseDecisionSheet
+          count={needDecision.length}
+          visible={needDecision.length > 0}
+          busy={busy}
+          onSendNow={() => void decide(true)}
+          onHoldOff={() => void decide(false)}
         />
-        {mode === 'bulk' && <Text style={font.small}>Tap each date to add the same Event on all of them.</Text>}
-        <MonthCalendar
-          initialDate={today}
-          selected={mode === 'single' ? date : dates}
-          isDisabled={(d) => d < today}
-          onSelect={mode === 'single' ? setDate : toggleDate}
-        />
-        <View style={{ gap: space.xs }}>
-          {mode === 'single' && date && <Text style={font.heading}>{longDate(date)}</Text>}
-          {mode === 'bulk' && dates.size > 0 && <Text style={font.heading}>{`${dates.size} ${dates.size === 1 ? 'date' : 'dates'} selected`}</Text>}
-        </View>
-        <TimeField label="Start time" value={time} onChange={setTime} hint={`Times are in the Team's time zone (${team.timezone}).`} />
-      </Card>
-      <ErrorText error={error} />
-      <Button label={mode === 'bulk' && dates.size > 1 ? `Create ${dates.size} Events` : 'Create Event'} busy={busy && !needDecision.length} onPress={() => void submit()} />
-      <ReleaseDecisionSheet
-        count={needDecision.length}
-        visible={needDecision.length > 0}
-        busy={busy}
-        onSendNow={() => void decide(true)}
-        onHoldOff={() => void decide(false)}
-      />
-    </Screen>
+      </Screen>
+    </TeamAccent>
   );
 }
