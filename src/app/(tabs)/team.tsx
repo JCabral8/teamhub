@@ -1,9 +1,10 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Share, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { api } from '../../lib/api';
 import { loadEvents, loadTeamDetail, type TeamMember } from '../../lib/data';
 import { useAction, useLoader, useRealtime } from '../../lib/hooks';
+import { shareOrCopy } from '../../lib/share';
 import { isManagerOf, useTeams } from '../../lib/teams';
 import { Badge, Button, Card, Chips, Empty, ErrorText, ListRow, Loading, Notice, Screen, SectionLabel, Segmented, useConfirm } from '../../ui/components';
 import { EventRow } from '../../ui/EventRow';
@@ -56,15 +57,9 @@ export default function TeamScreen() {
   const pendingCount = (data?.detail.members ?? []).filter((m) => m.status === 'PENDING').length;
   const openEvent = (id: string) => router.push({ pathname: '/event/[id]', params: { id } });
 
-  // Browsers without a share sheet (most desktops) get the link copied instead.
   const shareLink = async () => {
     const link = joinLink(team.join_code);
-    try {
-      await Share.share({ message: `Join ${team.name} on TeamHub: ${link}` });
-    } catch (err) {
-      if ((err as Error)?.name === 'AbortError' || typeof navigator === 'undefined' || !navigator.clipboard) return;
-      await navigator.clipboard.writeText(link).then(() => setCopied(true), () => undefined);
-    }
+    if (await shareOrCopy(`Join ${team.name} on TeamHub: ${link}`, link)) setCopied(true);
   };
 
   const onLeave = async () => {

@@ -1,4 +1,5 @@
 // Display helpers. Event times always render in the Team's time zone (spec §23).
+import { Platform } from 'react-native';
 import { notifications, type EventType, type RosterStanding } from '../domain/index.ts';
 import type { Tone } from './theme';
 
@@ -58,5 +59,16 @@ export function deviceTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 }
 
-/** Deep link a Manager shares; opens the join screen in the app (spec §6). */
-export const joinLink = (code: string) => `teamhub://join/${code}`;
+/**
+ * A link to a screen, for sharing in a team chat. In the browser it's the web app's own address, so
+ * it opens for anyone; in the phone app it's the app's scheme (`teamhub:/` + `/join/…` → `teamhub://join/…`).
+ */
+function appLink(path: string): string {
+  return Platform.OS === 'web' && typeof window !== 'undefined' ? `${window.location.origin}${path}` : `teamhub:/${path}`;
+}
+
+/** Link a Manager shares to invite players; opens the join screen (spec §6). */
+export const joinLink = (code: string) => appLink(`/join/${code}`);
+
+/** Link to an Event, shared in the team chat when attendance goes out. */
+export const eventLink = (id: string) => appLink(`/event/${id}`);
