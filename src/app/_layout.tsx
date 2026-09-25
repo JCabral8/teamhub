@@ -9,6 +9,9 @@ import { TeamsProvider } from '../lib/teams';
 import { Empty, Loading, Screen } from '../ui/components';
 import { colors } from '../ui/theme';
 
+// A screen opened from a link or a page refresh gets the tabs underneath, so it has a back button.
+export const unstable_settings = { anchor: '(tabs)' };
+
 function AuthGate() {
   const { session, loading } = useAuth();
   const segments = useSegments();
@@ -33,7 +36,7 @@ function AuthGate() {
         headerBackButtonDisplayMode: 'minimal',
       }}
     >
-      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+      <Stack.Screen name="(tabs)" options={{ headerShown: false, title: 'Home' }} />
       <Stack.Screen name="sign-in" options={{ title: 'TeamHub', headerBackVisible: false }} />
       <Stack.Screen name="event/[id]" options={{ title: 'Event' }} />
       <Stack.Screen name="event/new" options={{ title: 'New Event' }} />

@@ -9,6 +9,17 @@ import { font } from '../ui/theme';
 
 type Mode = 'signIn' | 'signUp';
 
+/** Supabase auth messages are technical; say what the person should do instead. */
+function authError(err: { message: string; code?: string }): Error {
+  const m = err.message;
+  if (err.code === 'invalid_credentials' || /invalid login credentials/i.test(m)) return new Error('Wrong email or password.');
+  if (err.code === 'user_already_exists' || /already registered/i.test(m)) return new Error('An account with this email already exists. Sign in instead.');
+  if (err.code === 'email_address_invalid' || /validate email|invalid format/i.test(m)) return new Error('Enter a valid email address.');
+  if (err.code === 'weak_password' || /password should/i.test(m)) return new Error('Choose a stronger password: at least 8 characters.');
+  if (err.code === 'over_request_rate_limit' || /rate limit|too many/i.test(m)) return new Error('Too many attempts. Wait a minute and try again.');
+  return new Error(m);
+}
+
 export default function SignIn() {
   const { session } = useAuth();
   const router = useRouter();
@@ -35,11 +46,11 @@ export default function SignIn() {
           password,
           options: { data: { display_name: name.trim() } },
         });
-        if (err) throw err;
+        if (err) throw authError(err);
         if (!data.session) setCheckEmail(true);
       } else {
         const { error: err } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-        if (err) throw err;
+        if (err) throw authError(err);
       }
     });
 

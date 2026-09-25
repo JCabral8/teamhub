@@ -1,6 +1,6 @@
 // Manager Event roster (spec §33–§36, §45, §49): summary, coverage warnings, Position groups, callups.
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import {
   calculateAttendanceCounts,
@@ -27,6 +27,7 @@ export function ManagerRoster({ detail, team, onChanged }: { detail: EventDetail
   const [selected, setSelected] = useState<EventRosterEntry | null>(null);
   const [adding, setAdding] = useState(false);
   const [editingNeeds, setEditingNeeds] = useState(false);
+  const [callupResult, setCallupResult] = useState<string | null>(null);
   const act = useAction();
   const openCallups = new Set(invites.filter((i) => !i.closed_at && i.response === 'NO_RESPONSE').map((i) => i.user_id));
   const positionName = new Map(team.positions.map((p) => [p.id, p.name]));
@@ -71,8 +72,25 @@ export function ManagerRoster({ detail, team, onChanged }: { detail: EventDetail
           <Button label="Needs" icon="options-outline" variant="secondary" onPress={() => setEditingNeeds(true)} style={{ flex: 1 }} />
         </ButtonRow>
         {released && (
-          <Button label="Find Callups" icon="search-outline" variant="ghost" busy={act.busy && !selected} onPress={() => void runAction(() => api('runCallupSelection', { eventId: event.id }))} />
+          <Button
+            label="Find Callups"
+            icon="search-outline"
+            variant="ghost"
+            busy={act.busy && !selected}
+            onPress={() =>
+              void runAction(async () => {
+                setCallupResult(null);
+                const { invited } = await api<{ invited: number }>('runCallupSelection', { eventId: event.id });
+                setCallupResult(
+                  invited
+                    ? `Invited ${invited} ${invited === 1 ? 'callup' : 'callups'}.`
+                    : 'No callups invited. Either no spots are open, or no callups are available for them.',
+                );
+              })
+            }
+          />
         )}
+        {callupResult && <Text style={font.small}>{callupResult}</Text>}
         <ErrorText error={!selected && !adding ? act.error : null} />
       </Card>
 
@@ -165,18 +183,22 @@ function AddPlayerSheet({ visible, onClose, detail, team, onAdded }: { visible: 
   const onEvent = new Set(detail.roster.map((r) => r.userId));
   const candidates = team.members.filter((m) => m.status === 'ACTIVE' && !onEvent.has(m.user_id));
   const [chosen, setChosen] = useState<string | null>(null);
-  const { busy, error, run } = useAction();
+  const { busy, error, setError, run } = useAction();
+  const close = () => {
+    setChosen(null);
+    setError(null);
+    onClose();
+  };
 
   const add = (sendAttendanceRequest: boolean) =>
     run(async () => {
       await api('addEventPlayer', { eventId: detail.event.id, membershipId: chosen, sendAttendanceRequest });
-      setChosen(null);
-      onClose();
+      close();
       onAdded();
     });
 
   return (
-    <Sheet visible={visible} onClose={onClose} title="Add Player">
+    <Sheet visible={visible} onClose={close} title="Add Player">
       {candidates.length ? (
         <View>
           {candidates.map((m, i) => (
@@ -212,7 +234,14 @@ function RequirementsSheet({ visible, onClose, detail, team, onSaved }: { visibl
   const editable = team.positions.filter((p) => p.kind !== 'HYBRID' && (p.kind !== 'GOALIE' || team.config.goalieEnabled));
   const initial = () => Object.fromEntries(editable.map((p) => [p.id, detail.requirements.find((r) => r.positionId === p.id)?.quantity ?? 0]));
   const [values, setValues] = useState<Record<string, number>>(initial);
-  const { busy, error, run } = useAction();
+  const { busy, error, setError, run } = useAction();
+  // Start from the Event's current needs each time the sheet opens.
+  useEffect(() => {
+    if (!visible) return;
+    setValues(initial());
+    setError(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
 
   const save = () =>
     run(async () => {

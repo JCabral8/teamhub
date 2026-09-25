@@ -42,8 +42,11 @@ export interface MyMembership {
 const TEAM_COLUMNS =
   'id, name, timezone, arena, default_location, join_code, attendance_mode, release_days_before, release_time, reminder_enabled, reminder_hours_before, callup_mode, callup_selection_method, goalie_enabled';
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const OFFLINE ='Could not reach TeamHub. Check your connection and try again.';
+
 function check<T>(res: { data: T | null; error: { message: string } | null }): T {
-  if (res.error) throw new Error(res.error.message);
+  if (res.error) throw new Error(/fetch|network/i.test(res.error.message) ? OFFLINE : res.error.message);
   return res.data as T;
 }
 
@@ -105,7 +108,7 @@ export async function loadTeamDetail(team: Team, isManager: boolean): Promise<Te
   const memberRows = check(
     await supabase
       .from('team_memberships')
-      .select('id, user_id, status, manager_role, roster_role, requested_position, profile:profiles(display_name)')
+      .select('id, user_id, status, manager_role, roster_role, requested_position, profile:profiles!user_id(display_name)')
       .eq('team_id', team.id)
       .in('status', isManager ? ['ACTIVE', 'PENDING'] : ['ACTIVE']),
   ) as unknown as (Omit<TeamMember, 'display_name' | 'position_id'> & { profile: { display_name: string } | null })[];
@@ -121,7 +124,10 @@ export async function loadTeamDetail(team: Team, isManager: boolean): Promise<Te
     .map((m) => ({ ...m, display_name: m.profile?.display_name ?? 'Player', position_id: positionsByMember.get(m.id) ?? null }))
     .sort((a, b) => a.display_name.localeCompare(b.display_name));
 
-  return { positions, config: { positions, goalieEnabled: team.goalie_enabled }, requirements, members };
+  // Read the Goalie flag fresh: the Team passed in can be a moment old right after a settings change.
+  const fresh = check(await supabase.from('teams').select('goalie_enabled').eq('id', team.id).maybeSingle()) as { goalie_enabled: boolean } | null;
+  const goalieEnabled = fresh?.goalie_enabled ?? team.goalie_enabled;
+  return { positions, config: { positions, goalieEnabled }, requirements, members };
 }
 
 export interface TeamEvent {
@@ -187,7 +193,11 @@ export interface EventDetail {
 
 /** `managerOf` decides, once the Event's Team is known, whether to load the manager-only planning data. */
 export async function loadEventDetail(eventId: string, managerOf: (teamId: string) => boolean): Promise<EventDetail> {
-  const event = check(await supabase.from('events').select(EVENT_COLUMNS).eq('id', eventId).single()) as TeamEvent;
+  // Row-level security hides Events of Teams you left, so "deleted" and "no access" look the same.
+  const gone = "This Event was deleted, or you're no longer on its Team.";
+  if (!UUID.test(eventId ?? '')) throw new Error(gone);
+  const event = check(await supabase.from('events').select(EVENT_COLUMNS).eq('id', eventId).maybeSingle()) as TeamEvent | null;
+  if (!event) throw new Error(gone);
   const isManager = managerOf(event.team_id);
   const requirements = (
     check(await supabase.from('event_roster_requirements').select('team_position_id, quantity').eq('event_id', eventId)) as {
@@ -198,7 +208,7 @@ export async function loadEventDetail(eventId: string, managerOf: (teamId: strin
   const rows = check(
     await supabase
       .from('event_roster_players')
-      .select('id, user_id, response, response_origin, reason, pending_since, profile:profiles(display_name)')
+      .select('id, user_id, response, response_origin, reason, pending_since, profile:profiles!user_id(display_name)')
       .eq('event_id', eventId)
       .is('removed_at', null),
   ) as unknown as {
@@ -275,7 +285,8 @@ export async function loadAvailability(): Promise<AvailabilityBlock[]> {
 }
 
 export async function markUnavailable(date: string): Promise<void> {
-  check(await supabase.from('availability_blocks').insert({ start_date: date, end_date: date }));
+  const { error } = await supabase.from('availability_blocks').insert({ start_date: date, end_date: date });
+  if (error) check({ data: null, error: error.code === '42501' ? { message: 'Past dates cannot be marked unavailable.' } : error });
 }
 
 export async function clearUnavailable(id: string): Promise<void> {

@@ -51,9 +51,11 @@ export default function NewEvent() {
       if (mode === 'single') {
         if (!date) return setError('Choose a date.');
         const startsAt = zonedToUtc(date, time, team.timezone);
+        if (startsAt <= new Date()) return setError('That time has already passed. Choose a later time.');
         results = [await api<CreateResult>('createEvent', { teamId, ...fields, startsAt: startsAt.toISOString() })];
       } else {
         if (!dates.size) return setError('Choose at least one date.');
+        if ([...dates].some((d) => zonedToUtc(d, time, team.timezone) <= new Date())) return setError('That time has already passed today. Choose a later time or remove today.');
         results = await api<CreateResult[]>('createEvents', { teamId, ...fields, time, dates: [...dates].sort() });
       }
       const pending = results.filter((r) => r.releaseDecisionRequired);
