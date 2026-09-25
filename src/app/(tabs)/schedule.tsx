@@ -66,6 +66,7 @@ export default function Schedule() {
       event={e}
       timezone={teamById.get(e.team_id)!.team.timezone}
       teamName={multiTeam && teamFilter === 'ALL' ? teamById.get(e.team_id)!.team.name : undefined}
+      accentColor={multiTeam ? teamById.get(e.team_id)!.team.accent_color : undefined}
       myLine={data?.lines.get(e.id)}
       onPress={() => router.push({ pathname: '/event/[id]', params: { id: e.id } })}
     />

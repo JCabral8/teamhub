@@ -99,6 +99,10 @@ export interface TeamSettingsPatch {
   reminderHoursBefore?: number;
   callupMode?: CallupMode;
   callupSelectionMethod?: CallupSelectionMethod;
+  /** #RRGGBB, or null for the app's default colour. */
+  accentColor?: string | null;
+  /** Storage path in the team-logos bucket, under the Team's own folder; null removes the logo. */
+  logoPath?: string | null;
 }
 
 /**
@@ -110,6 +114,9 @@ export async function updateTeamSettings(ctx: CommandContext, teamId: string, pa
   await requireManager(ctx.tx, teamId, ctx.actorId);
   if (patch.timezone !== undefined && !isValidTimeZone(patch.timezone)) {
     throw new DomainError('INVALID_TIMEZONE', 'Choose a valid timezone.');
+  }
+  if (patch.logoPath && !new RegExp(`^${teamId}/[A-Za-z0-9._-]{1,100}$`).test(patch.logoPath)) {
+    throw new DomainError('INVALID_INPUT', "logoPath must be a file in the Team's logo folder.");
   }
   await ctx.tx`
     update public.teams set
@@ -123,7 +130,9 @@ export async function updateTeamSettings(ctx: CommandContext, teamId: string, pa
       reminder_enabled = ${patch.reminderEnabled ?? before.reminder_enabled},
       reminder_hours_before = ${patch.reminderHoursBefore ?? before.reminder_hours_before},
       callup_mode = ${patch.callupMode ?? before.callup_mode},
-      callup_selection_method = ${patch.callupSelectionMethod ?? before.callup_selection_method}
+      callup_selection_method = ${patch.callupSelectionMethod ?? before.callup_selection_method},
+      accent_color = ${patch.accentColor !== undefined ? patch.accentColor : before.accent_color},
+      logo_path = ${patch.logoPath !== undefined ? patch.logoPath : before.logo_path}
     where id = ${teamId}
   `;
   const after = await loadTeam(ctx.tx, teamId);

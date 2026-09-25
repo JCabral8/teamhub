@@ -29,6 +29,10 @@ export interface Team {
   callup_mode: CallupMode;
   callup_selection_method: CallupSelectionMethod;
   goalie_enabled: boolean;
+  /** #RRGGBB, or null for the app's default colour. */
+  accent_color: string | null;
+  /** Path in the team-logos bucket. */
+  logo_path: string | null;
 }
 
 export interface MyMembership {
@@ -40,7 +44,7 @@ export interface MyMembership {
 }
 
 const TEAM_COLUMNS =
-  'id, name, timezone, arena, default_location, join_code, attendance_mode, release_days_before, release_time, reminder_enabled, reminder_hours_before, callup_mode, callup_selection_method, goalie_enabled';
+  'id, name, timezone, arena, default_location, join_code, attendance_mode, release_days_before, release_time, reminder_enabled, reminder_hours_before, callup_mode, callup_selection_method, goalie_enabled, accent_color, logo_path';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const OFFLINE ='Could not reach TeamHub. Check your connection and try again.';
@@ -72,6 +76,8 @@ export interface TeamMember {
   roster_role: RosterRole;
   requested_position: string | null;
   display_name: string;
+  /** Path in the avatars bucket. */
+  avatar_path: string | null;
   /** Official Position; only loaded for Managers. */
   position_id: string | null;
 }
@@ -108,10 +114,10 @@ export async function loadTeamDetail(team: Team, isManager: boolean): Promise<Te
   const memberRows = check(
     await supabase
       .from('team_memberships')
-      .select('id, user_id, status, manager_role, roster_role, requested_position, profile:profiles!user_id(display_name)')
+      .select('id, user_id, status, manager_role, roster_role, requested_position, profile:profiles!user_id(display_name, avatar_path)')
       .eq('team_id', team.id)
       .in('status', isManager ? ['ACTIVE', 'PENDING'] : ['ACTIVE']),
-  ) as unknown as (Omit<TeamMember, 'display_name' | 'position_id'> & { profile: { display_name: string } | null })[];
+  ) as unknown as (Omit<TeamMember, 'display_name' | 'avatar_path' | 'position_id'> & { profile: { display_name: string; avatar_path: string | null } | null })[];
 
   let positionsByMember = new Map<string, string>();
   if (isManager && memberRows.length) {
@@ -121,7 +127,12 @@ export async function loadTeamDetail(team: Team, isManager: boolean): Promise<Te
     positionsByMember = new Map(mp.map((r) => [r.membership_id, r.team_position_id]));
   }
   const members = memberRows
-    .map((m) => ({ ...m, display_name: m.profile?.display_name ?? 'Player', position_id: positionsByMember.get(m.id) ?? null }))
+    .map((m) => ({
+      ...m,
+      display_name: m.profile?.display_name ?? 'Player',
+      avatar_path: m.profile?.avatar_path ?? null,
+      position_id: positionsByMember.get(m.id) ?? null,
+    }))
     .sort((a, b) => a.display_name.localeCompare(b.display_name));
 
   // Read the Goalie flag fresh: the Team passed in can be a moment old right after a settings change.
@@ -189,6 +200,8 @@ export interface EventDetail {
   roster: EventRosterEntry[];
   /** Manager-only: callup invitations with rank and target. Empty for players. */
   invites: CallupInvite[];
+  /** Profile picture paths by user id, for everyone on the roster who has one. */
+  avatars: Record<string, string>;
 }
 
 /** `managerOf` decides, once the Event's Team is known, whether to load the manager-only planning data. */
@@ -208,7 +221,7 @@ export async function loadEventDetail(eventId: string, managerOf: (teamId: strin
   const rows = check(
     await supabase
       .from('event_roster_players')
-      .select('id, user_id, response, response_origin, reason, pending_since, profile:profiles!user_id(display_name)')
+      .select('id, user_id, response, response_origin, reason, pending_since, profile:profiles!user_id(display_name, avatar_path)')
       .eq('event_id', eventId)
       .is('removed_at', null),
   ) as unknown as {
@@ -218,7 +231,7 @@ export async function loadEventDetail(eventId: string, managerOf: (teamId: strin
     response_origin: EventRosterEntry['responseOrigin'];
     reason: string | null;
     pending_since: string | null;
-    profile: { display_name: string } | null;
+    profile: { display_name: string; avatar_path: string | null } | null;
   }[];
 
   let positions = new Map<string, string>();
@@ -250,7 +263,8 @@ export async function loadEventDetail(eventId: string, managerOf: (teamId: strin
     reason: r.reason,
     pendingSince: r.pending_since,
   }));
-  return { event, requirements, roster, invites };
+  const avatars = Object.fromEntries(rows.filter((r) => r.profile?.avatar_path).map((r) => [r.user_id, r.profile!.avatar_path!]));
+  return { event, requirements, roster, invites, avatars };
 }
 
 export interface AppNotification {
@@ -297,13 +311,17 @@ export interface Profile {
   id: string;
   display_name: string;
   preferred_position: string | null;
+  avatar_path: string | null;
 }
 
 export async function loadProfile(userId: string): Promise<Profile> {
-  return check(await supabase.from('profiles').select('id, display_name, preferred_position').eq('id', userId).single()) as Profile;
+  return check(await supabase.from('profiles').select('id, display_name, preferred_position, avatar_path').eq('id', userId).single()) as Profile;
 }
 
-export async function saveProfile(userId: string, patch: { display_name: string; preferred_position: string | null }): Promise<void> {
+export async function saveProfile(
+  userId: string,
+  patch: { display_name: string; preferred_position: string | null } | { avatar_path: string | null },
+): Promise<void> {
   check(await supabase.from('profiles').update(patch).eq('id', userId));
 }
 

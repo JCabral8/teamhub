@@ -77,6 +77,14 @@ export function clockTime(p: Params, field: string): string {
   return v;
 }
 
+/** A #RRGGBB colour, returned in upper case, or null to clear it. */
+export function hexColor(p: Params, field: string): string | null {
+  const v = p[field];
+  if (v === null) return null;
+  if (typeof v !== 'string' || !/^#[0-9a-f]{6}$/i.test(v)) throw invalid(field, 'must be a colour like #1F5FD1');
+  return v.toUpperCase();
+}
+
 export function list(p: Params, field: string, max = 200): unknown[] {
   const v = p[field];
   if (!Array.isArray(v) || v.length > max) throw invalid(field, `must be a list of at most ${max} items`);

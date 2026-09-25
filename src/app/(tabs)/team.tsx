@@ -6,10 +6,12 @@ import { loadEvents, loadTeamDetail, type TeamMember } from '../../lib/data';
 import { useAction, useLoader, useRealtime } from '../../lib/hooks';
 import { shareOrCopy } from '../../lib/share';
 import { isManagerOf, useTeams } from '../../lib/teams';
+import { useAccent } from '../../ui/accent';
+import { Avatar, TeamLogo } from '../../ui/Avatar';
 import { Badge, Button, Card, Chips, Empty, ErrorText, ListRow, Loading, Notice, Screen, SectionLabel, Segmented, useConfirm } from '../../ui/components';
 import { EventRow } from '../../ui/EventRow';
 import { eventTitle, eventWhen, joinLink } from '../../ui/format';
-import { colors, font, space } from '../../ui/theme';
+import { font, space } from '../../ui/theme';
 
 type Tab = 'roster' | 'games' | 'events' | 'info';
 
@@ -21,6 +23,7 @@ export default function TeamScreen() {
   const manager = isManagerOf(membership);
   const [tab, setTab] = useState<Tab>('roster');
   const [copied, setCopied] = useState(false);
+  const accent = useAccent();
   const leave = useAction();
   const confirm = useConfirm();
 
@@ -76,6 +79,15 @@ export default function TeamScreen() {
       {teams.active.length > 1 && (
         <Chips options={teams.active.map((m) => ({ value: m.team.id, label: m.team.name }))} value={team.id} onChange={teams.select} />
       )}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+        <TeamLogo team={team} size={56} />
+        <View style={{ flex: 1 }}>
+          <Text style={font.title} numberOfLines={2}>
+            {team.name}
+          </Text>
+          {team.arena ? <Text style={font.small}>{team.arena}</Text> : null}
+        </View>
+      </View>
       <ErrorText error={error} />
 
       <SectionLabel>Next Team Event</SectionLabel>
@@ -156,7 +168,7 @@ export default function TeamScreen() {
             <Card>
               <Text style={font.heading}>Invite players</Text>
               <Text style={font.small}>Share this join link. Every request needs a Manager's approval.</Text>
-              <Text selectable style={[font.body, { color: colors.primary }]}>
+              <Text selectable style={[font.body, { color: accent.ink }]}>
                 {joinLink(team.join_code)}
               </Text>
               <Button label={copied ? 'Link Copied' : 'Share Join Link'} icon={copied ? 'checkmark' : 'share-outline'} onPress={() => void shareLink()} />
@@ -181,14 +193,14 @@ function PlayerRoster({ members }: { members: TeamMember[] }) {
   return (
     <>
       <Card style={{ paddingVertical: 0 }}>
-        {roster.length ? roster.map((m, i) => <ListRow key={m.id} first={i === 0} title={m.display_name} />) : <Text style={[font.small, { paddingVertical: space.lg }]}>No players yet.</Text>}
+        {roster.length ? roster.map((m, i) => <ListRow key={m.id} first={i === 0} title={m.display_name} leading={<Avatar name={m.display_name} path={m.avatar_path} />} />) : <Text style={[font.small, { paddingVertical: space.lg }]}>No players yet.</Text>}
       </Card>
       {callups.length > 0 && (
         <>
           <SectionLabel>Callups</SectionLabel>
           <Card style={{ paddingVertical: 0 }}>
             {callups.map((m, i) => (
-              <ListRow key={m.id} first={i === 0} title={m.display_name} />
+              <ListRow key={m.id} first={i === 0} title={m.display_name} leading={<Avatar name={m.display_name} path={m.avatar_path} />} />
             ))}
           </Card>
         </>
@@ -222,7 +234,11 @@ function ManagerRoster({ members, detail }: { members: TeamMember[]; detail: Awa
               <Card key={g.key} style={{ paddingVertical: space.sm, gap: 0 }}>
                 <Text style={[font.body, { fontWeight: '600', paddingTop: space.xs }]}>{g.name}</Text>
                 {g.people.map((m) => (
-                  <ListRow key={m.id} title={m.display_name} right={m.manager_role ? <Badge label={m.manager_role === 'MANAGER' ? 'Manager' : 'Assistant'} tone="primary" /> : undefined} />
+                  <ListRow
+                    key={m.id}
+                    title={m.display_name}
+                    leading={<Avatar name={m.display_name} path={m.avatar_path} />}
+                    right={m.manager_role ? <Badge label={m.manager_role === 'MANAGER' ? 'Manager' : 'Assistant'} tone="primary" /> : undefined} />
                 ))}
               </Card>
             ))}

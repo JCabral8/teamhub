@@ -10,6 +10,7 @@ import { useTeams } from '../../lib/teams';
 import { Badge, Button, ButtonRow, Card, Chips, ErrorText, ListRow, SectionLabel, Sheet } from '../../ui/components';
 import { font, space } from '../../ui/theme';
 import type { SectionProps } from './types';
+import { Avatar } from '../../ui/Avatar';
 
 const ROLE_OPTIONS: { value: RosterRole; label: string }[] = [
   { value: 'ROSTER', label: 'Default roster' },
@@ -45,6 +46,7 @@ export function MemberSettings({ membership, detail, reload }: SectionProps) {
             key={m.id}
             first={i === 0}
             title={m.display_name}
+            leading={<Avatar name={m.display_name} path={m.avatar_path} />}
             subtitle={[m.position_id ? positionName.get(m.position_id) : 'No Position', roleLabel(m.roster_role)].join(' · ')}
             right={m.manager_role ? <Badge label={m.manager_role === 'MANAGER' ? 'Manager' : 'Assistant'} tone="primary" /> : undefined}
             onPress={() => setSelected(m)}

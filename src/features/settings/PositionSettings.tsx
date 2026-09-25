@@ -8,8 +8,10 @@ import { useAction } from '../../lib/hooks';
 import { Badge, Button, Card, ErrorText, Field, ListRow, SectionLabel, ToggleRow, useConfirm } from '../../ui/components';
 import { colors, font, radius, space } from '../../ui/theme';
 import type { SectionProps } from './types';
+import { useAccent } from '../../ui/accent';
 
 export function PositionSettings({ membership, detail, reload }: SectionProps) {
+  const accent = useAccent();
   const teamId = membership.team.id;
   const positions = sortPositions(detail.positions);
   const goalie = goaliePosition(detail.config);
@@ -132,11 +134,11 @@ export function PositionSettings({ membership, detail, reload }: SectionProps) {
                   paddingHorizontal: space.md,
                   borderRadius: radius.pill,
                   borderWidth: 1,
-                  borderColor: on ? colors.primary : colors.border,
-                  backgroundColor: on ? colors.primarySoft : colors.surface,
+                  borderColor: on ? accent.accent : colors.border,
+                  backgroundColor: on ? accent.soft : colors.surface,
                 }}
               >
-                <Ionicons name={on ? 'checkbox' : 'square-outline'} size={18} color={on ? colors.primary : colors.textMuted} />
+                <Ionicons name={on ? 'checkbox' : 'square-outline'} size={18} color={on ? accent.ink : colors.textMuted} />
                 <Text style={font.body}>{b.name}</Text>
               </Pressable>
             );

@@ -1,19 +1,27 @@
 import { Stack, usePathname, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from '../lib/auth';
 import { usePushRegistration } from '../lib/push';
 import { isConfigured } from '../lib/supabase';
-import { TeamsProvider } from '../lib/teams';
+import { TeamsProvider, useTeams } from '../lib/teams';
+import { AccentProvider, useAccent } from '../ui/accent';
 import { Empty, Loading, Screen } from '../ui/components';
 import { colors } from '../ui/theme';
 
 // A screen opened from a link or a page refresh gets the tabs underneath, so it has a back button.
 export const unstable_settings = { anchor: '(tabs)' };
 
+/** The app follows the colour of the Team picked on the Team tab. */
+function SelectedTeamAccent({ children }: { children: ReactNode }) {
+  const teams = useTeams();
+  return <AccentProvider color={teams.selected?.team.accent_color}>{children}</AccentProvider>;
+}
+
 function AuthGate() {
   const { session, loading } = useAuth();
+  const accent = useAccent();
   const segments = useSegments();
   const pathname = usePathname();
   const router = useRouter();
@@ -29,7 +37,7 @@ function AuthGate() {
   return (
     <Stack
       screenOptions={{
-        headerTintColor: colors.primary,
+        headerTintColor: accent.ink,
         headerTitleStyle: { color: colors.text },
         headerStyle: { backgroundColor: colors.surface },
         contentStyle: { backgroundColor: colors.background },
@@ -72,7 +80,9 @@ export default function RootLayout() {
       <StatusBar style="dark" />
       <AuthProvider>
         <TeamsProvider>
-          <AuthGate />
+          <SelectedTeamAccent>
+            <AuthGate />
+          </SelectedTeamAccent>
         </TeamsProvider>
       </AuthProvider>
     </SafeAreaProvider>

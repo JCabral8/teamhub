@@ -9,6 +9,7 @@ import { useAction, useLoader } from '../../lib/hooks';
 import { Button, Card, Chips, ErrorText, ListRow, Notice, SectionLabel, Segmented } from '../../ui/components';
 import { colors, font, space } from '../../ui/theme';
 import type { SectionProps } from './types';
+import { useAccent } from '../../ui/accent';
 
 export function CallupSettings({ membership, detail, reload }: SectionProps) {
   const team = membership.team;
@@ -69,6 +70,7 @@ export function CallupSettings({ membership, detail, reload }: SectionProps) {
 }
 
 function PoolOrder({ membership, detail }: SectionProps) {
+  const accent = useAccent();
   const team = membership.team;
   const { data: saved, reload: reloadOrder } = useLoader(() => loadCallupPoolOrder(team.id), [team.id]);
   const callups = detail.members.filter((m) => m.status === 'ACTIVE' && m.roster_role === 'CALLUP');
@@ -124,7 +126,7 @@ function PoolOrder({ membership, detail }: SectionProps) {
               right={
                 <View style={{ flexDirection: 'row', gap: space.md }}>
                   <Pressable accessibilityRole="button" accessibilityLabel="Move up" disabled={i === 0} onPress={() => move(key, i, -1)} hitSlop={8}>
-                    <Ionicons name="arrow-up" size={20} color={i === 0 ? colors.disabled : colors.primary} />
+                    <Ionicons name="arrow-up" size={20} color={i === 0 ? colors.disabled : accent.ink} />
                   </Pressable>
                   <Pressable
                     accessibilityRole="button"
@@ -133,7 +135,7 @@ function PoolOrder({ membership, detail }: SectionProps) {
                     onPress={() => move(key, i, 1)}
                     hitSlop={8}
                   >
-                    <Ionicons name="arrow-down" size={20} color={i === pools[key].length - 1 ? colors.disabled : colors.primary} />
+                    <Ionicons name="arrow-down" size={20} color={i === pools[key].length - 1 ? colors.disabled : accent.ink} />
                   </Pressable>
                 </View>
               }

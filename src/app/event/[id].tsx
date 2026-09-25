@@ -11,6 +11,8 @@ import { isManagerOf, useTeams } from '../../lib/teams';
 import { Badge, Button, Card, Empty, ErrorText, ListRow, Loading, Screen, SectionLabel } from '../../ui/components';
 import { EVENT_TYPE_OPTIONS, STANDING_DISPLAY, eventTitle, eventWhen } from '../../ui/format';
 import { font, space } from '../../ui/theme';
+import { TeamAccent } from '../../ui/TeamAccent';
+import { Avatar } from '../../ui/Avatar';
 
 export default function EventScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -50,40 +52,42 @@ export default function EventScreen() {
   const typeLabel = EVENT_TYPE_OPTIONS.find((o) => o.value === event.type)?.label ?? 'Event';
 
   return (
-    <Screen onRefresh={reload}>
-      <Stack.Screen
-        options={{
-          title: typeLabel,
-          headerRight: manager
-            ? () => <Button label="Edit" variant="ghost" onPress={() => router.push({ pathname: '/event/edit', params: { id: event.id } })} style={{ minHeight: 0 }} />
-            : undefined,
-        }}
-      />
-      <ErrorText error={error} />
-      <View style={{ gap: space.xs }}>
-        <Text style={font.title}>{eventTitle(event)}</Text>
-        <Text style={font.body}>{eventWhen(event.starts_at, team.timezone)}</Text>
-        {event.location ? <Text style={font.small}>{event.location}</Text> : null}
-        {teams.active.length > 1 ? <Text style={font.small}>{team.name}</Text> : null}
-      </View>
-      {event.notes ? (
-        <Card>
-          <Text style={font.label}>Notes</Text>
-          <Text style={font.body}>{event.notes}</Text>
-        </Card>
-      ) : null}
+    <TeamAccent color={team.accent_color}>
+      <Screen onRefresh={reload}>
+        <Stack.Screen
+          options={{
+            title: typeLabel,
+            headerRight: manager
+              ? () => <Button label="Edit" variant="ghost" onPress={() => router.push({ pathname: '/event/edit', params: { id: event.id } })} style={{ minHeight: 0 }} />
+              : undefined,
+          }}
+        />
+        <ErrorText error={error} />
+        <View style={{ gap: space.xs }}>
+          <Text style={font.title}>{eventTitle(event)}</Text>
+          <Text style={font.body}>{eventWhen(event.starts_at, team.timezone)}</Text>
+          {event.location ? <Text style={font.small}>{event.location}</Text> : null}
+          {teams.active.length > 1 ? <Text style={font.small}>{team.name}</Text> : null}
+        </View>
+        {event.notes ? (
+          <Card>
+            <Text style={font.label}>Notes</Text>
+            <Text style={font.body}>{event.notes}</Text>
+          </Card>
+        ) : null}
 
-      {mine && <PlayerAttendance eventId={event.id} entry={mine} released={released} isManager={manager} onChanged={() => void reload()} />}
+        {mine && <PlayerAttendance eventId={event.id} entry={mine} released={released} isManager={manager} onChanged={() => void reload()} />}
 
-      {manager && data.team ? (
-        <>
-          <SendAttendance event={event} team={team} onChanged={() => void reload()} />
-          <ManagerRoster detail={detail} team={data.team} onChanged={() => void reload()} />
-        </>
-      ) : (
-        <PlayerRoster detail={detail} released={released} />
-      )}
-    </Screen>
+        {manager && data.team ? (
+          <>
+            <SendAttendance event={event} team={team} onChanged={() => void reload()} />
+            <ManagerRoster detail={detail} team={data.team} onChanged={() => void reload()} />
+          </>
+        ) : (
+          <PlayerRoster detail={detail} released={released} />
+        )}
+      </Screen>
+    </TeamAccent>
   );
 }
 
@@ -106,6 +110,7 @@ function PlayerRoster({ detail, released }: { detail: Awaited<ReturnType<typeof 
                 key={p.userId}
                 first={i === 0}
                 title={p.displayName}
+                leading={<Avatar name={p.displayName} path={detail.avatars[p.userId]} />}
                 subtitle={p.reason}
                 right={released ? <Badge label={s.label} tone={s.tone} /> : undefined}
               />

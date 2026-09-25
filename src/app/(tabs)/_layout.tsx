@@ -2,6 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { Tabs } from 'expo-router/js-tabs';
 import type { ComponentProps } from 'react';
 import type { ColorValue } from 'react-native';
+import { useAccent } from '../../ui/accent';
 import { colors } from '../../ui/theme';
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
@@ -12,10 +13,11 @@ const icon =
 
 // Spec §3: HOME, SCHEDULE, TEAM, OTHER for players and Managers alike. There is no Attendance tab.
 export default function TabsLayout() {
+  const a = useAccent();
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: colors.primary,
+        tabBarActiveTintColor: a.ink,
         tabBarInactiveTintColor: colors.textFaint,
         headerTitleStyle: { color: colors.text },
         headerStyle: { backgroundColor: colors.surface },

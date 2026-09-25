@@ -301,3 +301,20 @@ describe('HTTP API', () => {
     expect(typeof body.data.teamId).toBe('string');
   });
 });
+
+describe('Team branding', () => {
+  it('Managers set and clear the accent colour and logo; players cannot', async () => {
+    const t = await buildTeam(h, { roster: [['Pat', 'Forward']] });
+    await h.run(t.managerId, 'updateTeamSettings', { teamId: t.teamId, accentColor: '#15803d', logoPath: `${t.teamId}/logo-1.png` });
+    const [row] = await h.sql<{ accent_color: string; logo_path: string }[]>`select accent_color, logo_path from public.teams where id = ${t.teamId}`;
+    expect(row).toEqual({ accent_color: '#15803D', logo_path: `${t.teamId}/logo-1.png` });
+
+    expect(await h.fail(t.managerId, 'updateTeamSettings', { teamId: t.teamId, accentColor: 'green' })).toBe('INVALID_INPUT');
+    expect(await h.fail(t.managerId, 'updateTeamSettings', { teamId: t.teamId, logoPath: 'another-team/logo.png' })).toBe('INVALID_INPUT');
+    expect(await h.fail(t.players.Pat.userId, 'updateTeamSettings', { teamId: t.teamId, accentColor: '#000000' })).toBe('FORBIDDEN');
+
+    await h.run(t.managerId, 'updateTeamSettings', { teamId: t.teamId, accentColor: null, logoPath: null });
+    const [cleared] = await h.sql`select accent_color, logo_path from public.teams where id = ${t.teamId}`;
+    expect(cleared).toEqual({ accent_color: null, logo_path: null });
+  });
+});

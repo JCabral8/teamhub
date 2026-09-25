@@ -74,6 +74,7 @@ export default function Home() {
                 event={e}
                 timezone={tz.get(e.team_id)!.timezone}
                 teamName={multiTeam ? tz.get(e.team_id)!.name : undefined}
+              accentColor={multiTeam ? tz.get(e.team_id)!.accent_color : undefined}
                 myLine={data?.lines.get(e.id)}
                 onPress={() => router.push({ pathname: '/event/[id]', params: { id: e.id } })}
               />
@@ -92,6 +93,7 @@ export default function Home() {
               event={e}
               timezone={tz.get(e.team_id)!.timezone}
               teamName={multiTeam ? tz.get(e.team_id)!.name : undefined}
+              accentColor={multiTeam ? tz.get(e.team_id)!.accent_color : undefined}
               myLine={data?.lines.get(e.id)}
               onPress={() => router.push({ pathname: '/event/[id]', params: { id: e.id } })}
             />

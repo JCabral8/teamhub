@@ -12,6 +12,7 @@ import { longDate } from '../../ui/format';
 import { MonthCalendar } from '../../ui/MonthCalendar';
 import { TimeField } from '../../ui/TimeField';
 import { font } from '../../ui/theme';
+import { TeamAccent } from '../../ui/TeamAccent';
 
 export default function EditEvent() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -85,21 +86,23 @@ export default function EditEvent() {
   };
 
   return (
-    <Screen>
-      <Card>
-        <EventForm value={form} onChange={setForm} team={team} />
-      </Card>
-      <Card>
-        <MonthCalendar initialDate={date} selected={date} onSelect={setDate} />
-        <Text style={font.heading}>{longDate(date)}</Text>
-        <TimeField label="Start time" value={time} onChange={setTime} hint={`Times are in the Team's time zone (${team.timezone}).`} />
-      </Card>
-      {impact?.requiresNewRelease && <Notice tone="attention">{EVENT_DATETIME_CHANGED_WARNING}</Notice>}
-      <ErrorText error={error} />
-      <Button label="Save Changes" busy={busy && !askRelease} onPress={() => void save()} />
-      <Button label="Delete Event" variant="danger" onPress={() => void remove()} />
-      <ReleaseDecisionSheet count={1} visible={askRelease} busy={busy} onSendNow={() => void decide(true)} onHoldOff={() => void decide(false)} />
-      {confirm.element}
-    </Screen>
+    <TeamAccent color={team.accent_color}>
+      <Screen>
+        <Card>
+          <EventForm value={form} onChange={setForm} team={team} />
+        </Card>
+        <Card>
+          <MonthCalendar initialDate={date} selected={date} onSelect={setDate} />
+          <Text style={font.heading}>{longDate(date)}</Text>
+          <TimeField label="Start time" value={time} onChange={setTime} hint={`Times are in the Team's time zone (${team.timezone}).`} />
+        </Card>
+        {impact?.requiresNewRelease && <Notice tone="attention">{EVENT_DATETIME_CHANGED_WARNING}</Notice>}
+        <ErrorText error={error} />
+        <Button label="Save Changes" busy={busy && !askRelease} onPress={() => void save()} />
+        <Button label="Delete Event" variant="danger" onPress={() => void remove()} />
+        <ReleaseDecisionSheet count={1} visible={askRelease} busy={busy} onSendNow={() => void decide(true)} onHoldOff={() => void decide(false)} />
+        {confirm.element}
+      </Screen>
+    </TeamAccent>
   );
 }

@@ -1,5 +1,6 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { AttendanceSettings } from '../../../features/settings/AttendanceSettings';
+import { BrandingSettings } from '../../../features/settings/BrandingSettings';
 import { CallupSettings } from '../../../features/settings/CallupSettings';
 import { DefaultRosterSettings } from '../../../features/settings/DefaultRosterSettings';
 import { GeneralSettings } from '../../../features/settings/GeneralSettings';
@@ -10,9 +11,11 @@ import { loadTeamDetail } from '../../../lib/data';
 import { useLoader } from '../../../lib/hooks';
 import { isManagerOf, useTeams } from '../../../lib/teams';
 import { Empty, ErrorText, Loading, Screen } from '../../../ui/components';
+import { TeamAccent } from '../../../ui/TeamAccent';
 
 const SECTIONS = {
   general: GeneralSettings,
+  branding: BrandingSettings,
   attendance: AttendanceSettings,
   roster: DefaultRosterSettings,
   positions: PositionSettings,
@@ -37,10 +40,12 @@ export default function SettingsSection() {
     await Promise.all([reload(), teams.reload()]);
   };
   return (
-    <Screen onRefresh={refresh}>
-      <Stack.Screen options={{ title: meta.title }} />
-      <ErrorText error={error} />
-      <Section membership={membership} detail={data} reload={refresh} />
-    </Screen>
+    <TeamAccent color={membership.team.accent_color}>
+      <Screen onRefresh={refresh}>
+        <Stack.Screen options={{ title: meta.title }} />
+        <ErrorText error={error} />
+        <Section membership={membership} detail={data} reload={refresh} />
+      </Screen>
+    </TeamAccent>
   );
 }
