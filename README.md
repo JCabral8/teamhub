@@ -38,9 +38,21 @@ The database tests create and drop a scratch database. They connect to `TEST_DAT
 2. `npx expo start`, then open it in Expo Go, a simulator, or the browser (`w`).
 3. Push notifications need a development build and an EAS project id (`npx eas-cli@latest init` adds it to `app.json`). Without one the app works and notifications stay in the in-app list.
 
-Join links use the `teamhub://join/<code>` scheme, so a shared link opens the join screen with the code filled in.
+Shared links use the web app's own address (`https://…/join/<code>`, `https://…/event/<id>`), so they open for anyone with a browser. In a phone build they fall back to the `teamhub://` scheme.
 
-## Deploying the backend
+## Deploying
+
+TeamHub runs as a web app on EAS Hosting. Every push to `main` runs `.github/workflows/deploy.yml`: typecheck and unit tests, then migrations and both Edge Functions, then the web app. The secrets and variables it needs are listed at the top of that file. The steps below are the manual equivalent and the one-time project setup.
+
+There are no push notifications on the web. When attendance goes out, a Manager uses **Share to Team Chat** on the Event to post a link to it.
+
+### Web app
+
+1. `npx eas-cli@latest login`, then `npx eas-cli@latest init` to link the Expo project.
+2. `npx expo export --platform web`, then `npx eas-cli@latest deploy --prod`.
+3. In Supabase, Authentication > URL Configuration: set the Site URL to the web app's address so email confirmation links open it.
+
+### Backend
 
 1. Create a Supabase project and link it: `npx supabase link --project-ref <ref>`.
 2. Apply migrations: `npx supabase db push`.
