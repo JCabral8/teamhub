@@ -6,3 +6,7 @@ verify_jwt = true
 [functions.jobs]
 # Authorized inside the function with the service role key.
 verify_jwt = false
+
+[functions.calendar]
+# Calendar apps fetch the feed without signing in; the secret token in the address is checked instead.
+verify_jwt = false

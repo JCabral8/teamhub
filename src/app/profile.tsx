@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
+import { CalendarSubscribe } from '../features/CalendarSubscribe';
 import { useAuth } from '../lib/auth';
 import { loadProfile, saveProfile } from '../lib/data';
 import { useAction, useLoader } from '../lib/hooks';
@@ -80,6 +81,8 @@ export default function Profile() {
         <Button label="Save" busy={busy} onPress={() => void save()} />
         {saved && <Notice tone="positive" title="Saved" />}
       </Card>
+      <SectionLabel>Calendar</SectionLabel>
+      <CalendarSubscribe />
       <SectionLabel>Account</SectionLabel>
       <Card style={{ paddingVertical: 0 }}>
         <ListRow first title="Email" subtitle={session?.user.email ?? ''} />

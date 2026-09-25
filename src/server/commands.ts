@@ -1,6 +1,7 @@
 // The command API: every client write goes through one of these, validated and authorized server-side.
 import { EVENT_TYPES, type RosterRole } from '../domain/index.ts';
 import * as attendance from './attendance.ts';
+import * as calendar from './calendar.ts';
 import type { CommandContext } from './db.ts';
 import * as events from './events.ts';
 import * as stats from './statistics.ts';
@@ -27,6 +28,10 @@ function eventFields(p: Params) {
 type Handler = (ctx: CommandContext, p: Params) => Promise<unknown>;
 
 export const commands: Record<string, Handler> = {
+  // Calendar subscription
+  getCalendarFeed: (ctx) => calendar.getCalendarFeed(ctx),
+  resetCalendarFeed: (ctx) => calendar.resetCalendarFeed(ctx),
+
   // Teams and membership (Phase 2)
   createTeam: (ctx, p) =>
     teams.createTeam(ctx, {
