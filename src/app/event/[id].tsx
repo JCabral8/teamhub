@@ -91,16 +91,21 @@ export default function EventScreen() {
   );
 }
 
+const STANDING_ORDER = { ATTENDING: 0, PENDING_APPROVAL: 1, NO_RESPONSE: 2, NOT_ATTENDING: 3 } as const;
+
 /**
- * The player view: alphabetical, no Positions, no callup marking or ranking (spec §44, §45, §47).
+ * The player view: no Positions, no callup marking or ranking (spec §44, §45, §47). Once attendance
+ * is out, who's coming is listed first, each group alphabetical. A Game's roster reads as the lineup.
  * Counts say "attending" rather than "Players" because players cannot tell who is a Goalie (spec §33).
  */
 function PlayerRoster({ detail, released }: { detail: Awaited<ReturnType<typeof loadEventDetail>>; released: boolean }) {
-  const people = toPlayerRosterView(detail.roster);
+  const alphabetical = toPlayerRosterView(detail.roster);
+  const people = released ? [...alphabetical].sort((a, b) => STANDING_ORDER[a.standing] - STANDING_ORDER[b.standing]) : alphabetical;
   const attending = people.filter((p) => p.standing === 'ATTENDING').length;
+  const heading = detail.event.type === 'GAME' ? 'Lineup' : 'Roster';
   return (
     <>
-      <SectionLabel>{released ? `Roster · ${attending} attending` : 'Roster'}</SectionLabel>
+      <SectionLabel>{released ? `${heading} · ${attending} attending` : heading}</SectionLabel>
       <Card style={{ paddingVertical: people.length ? 0 : undefined }}>
         {people.length ? (
           people.map((p, i) => {

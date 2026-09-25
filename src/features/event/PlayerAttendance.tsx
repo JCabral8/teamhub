@@ -5,7 +5,7 @@ import { DECLINE_REASON_MAX_LENGTH, standingOf, type EventRosterEntry } from '..
 import { api } from '../../lib/api';
 import { useAction } from '../../lib/hooks';
 import { Button, ButtonRow, Card, ErrorText, Field, Notice } from '../../ui/components';
-import { font } from '../../ui/theme';
+import { font, toneColors } from '../../ui/theme';
 
 export function PlayerAttendance({
   eventId,
@@ -21,6 +21,7 @@ export function PlayerAttendance({
   onChanged: () => void;
 }) {
   const [declining, setDeclining] = useState(false);
+  const [changing, setChanging] = useState(false);
   const [reason, setReason] = useState(entry.reason ?? '');
   const { busy, error, run } = useAction();
   const standing = standingOf(entry);
@@ -44,23 +45,33 @@ export function PlayerAttendance({
     run(async () => {
       await api('respondAttendance', { eventId, response, ...(response === 'NO' && { reason: reason.trim() || null }) });
       setDeclining(false);
+      setChanging(false);
       onChanged();
     });
+
+  // Once answered, the answer shrinks to one line so the Event details and lineup come first.
+  if (standing !== 'NO_RESPONSE' && !changing) {
+    const shown = {
+      ATTENDING: { tone: 'positive', title: "You're attending", body: null },
+      NOT_ATTENDING: { tone: 'negative', title: "You're not attending", body: entry.reason ? `Reason: ${entry.reason}` : null },
+      PENDING_APPROVAL: {
+        tone: 'attention',
+        title: 'Pending Approval',
+        body: "The roster is full right now. If a spot opens, the earliest request gets it and you'll be notified.",
+      },
+    } as const;
+    const s = shown[standing];
+    return (
+      <Notice tone={s.tone} title={s.title}>
+        {s.body ? <Text style={[font.small, { color: toneColors[s.tone].fg }]}>{s.body}</Text> : null}
+        <Button label="Change Answer" variant="ghost" onPress={() => setChanging(true)} style={{ minHeight: 0, alignSelf: 'flex-start', paddingHorizontal: 0 }} />
+      </Notice>
+    );
+  }
 
   return (
     <Card>
       <Text style={font.heading}>Are you attending?</Text>
-      {standing === 'ATTENDING' && <Notice tone="positive" title="You're attending" />}
-      {standing === 'NOT_ATTENDING' && (
-        <Notice tone="negative" title="You're not attending">
-          {entry.reason ? `Reason: ${entry.reason}` : undefined}
-        </Notice>
-      )}
-      {standing === 'PENDING_APPROVAL' && (
-        <Notice tone="attention" title="Pending Approval">
-          The roster is full right now. If a spot opens, the earliest request gets it and you'll be notified.
-        </Notice>
-      )}
       <ButtonRow>
         <Button
           label="Yes"
@@ -71,6 +82,7 @@ export function PlayerAttendance({
           onPress={() => {
             setDeclining(false);
             if (standing !== 'ATTENDING' && standing !== 'PENDING_APPROVAL') void respond('YES');
+            else setChanging(false);
           }}
           style={{ flex: 1 }}
         />
@@ -99,6 +111,7 @@ export function PlayerAttendance({
           </ButtonRow>
         </>
       )}
+      {changing && !declining && <Button label="Keep My Answer" variant="ghost" onPress={() => setChanging(false)} />}
       <ErrorText error={error} />
     </Card>
   );

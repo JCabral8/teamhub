@@ -32,22 +32,6 @@ export function clock(time: string): string {
   return `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
 }
 
-/** Accepts "18:00", "6:00 pm", "6pm", "6:30PM" and returns HH:MM, or null. */
-export function parseClockInput(input: string): string | null {
-  const s = input.trim().toLowerCase().replace(/\s+/g, '');
-  const m = /^(\d{1,2})(?::(\d{2}))?(am|pm)?$/.exec(s);
-  if (!m) return null;
-  let h = Number(m[1]);
-  const min = m[2] ? Number(m[2]) : 0;
-  if (min > 59) return null;
-  if (m[3]) {
-    if (h < 1 || h > 12) return null;
-    if (m[3] === 'am' && h === 12) h = 0;
-    if (m[3] === 'pm' && h !== 12) h += 12;
-  } else if (h > 23) return null;
-  return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
-}
-
 export const STANDING_DISPLAY: Record<RosterStanding, { label: string; tone: Tone }> = {
   ATTENDING: { label: 'Attending', tone: 'positive' },
   PENDING_APPROVAL: { label: 'Pending Approval', tone: 'attention' },
