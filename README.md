@@ -16,6 +16,7 @@ The V1 specification lives in [`docs/spec/`](docs/spec). Where the spec left a g
 | `src/ui/` | Shared components, calendar, formatting and design tokens. |
 | `supabase/migrations/` | Schema, constraints, row-level security, realtime publication and the per-minute job schedule. |
 | `supabase/functions/api` | Edge Function for every client write: `POST { command, params }` with the user's access token. |
+| `supabase/functions/calendar` | Edge Function serving each person's schedule as an iCalendar subscription feed (`GET ?token=…`, no sign-in; the token is the key). |
 | `supabase/functions/jobs` | Edge Function that pg_cron calls every minute for scheduled releases, "ready to send" notices, reminders and push delivery. |
 | `tests/domain/` | Unit tests for the domain rules. |
 | `tests/server/` | Integration tests that run the real migrations and services against Postgres. Together with the unit tests they cover all 40 scenarios in spec §61. |

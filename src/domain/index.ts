@@ -8,3 +8,4 @@ export * from './callups.ts';
 export * from './membership.ts';
 export * from './statistics.ts';
 export * as notifications from './notifications.ts';
+export * from './calendar.ts';

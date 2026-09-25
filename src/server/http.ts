@@ -1,6 +1,7 @@
 // HTTP entry points built on the standard Request/Response API, shared by the Deno Edge Functions and
 // the Node tests. Each command runs in one database transaction.
 import { DomainError } from '../domain/index.ts';
+import { CALENDAR_TOKEN, calendarForToken } from './calendar.ts';
 import { commands } from './commands.ts';
 import type { Sql } from './db.ts';
 import { runScheduledJobs } from './jobs.ts';
@@ -102,5 +103,30 @@ export async function handleJobs(req: Request, deps: Omit<ApiDeps, 'authenticate
     return json(200, { ok: true, data });
   } catch (err) {
     return errorResponse(err, deps.log, { job: 'scheduled' });
+  }
+}
+
+/**
+ * GET ?token=… from a calendar app: the person's schedule as iCalendar. There is no sign-in; the
+ * secret token is the key, and an unknown one gets a plain 404.
+ */
+export async function handleCalendar(req: Request, deps: { sql: Sql; appUrl: string; now?: () => Date; log?: ApiDeps['log'] }): Promise<Response> {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return new Response('Use GET.', { status: 405 });
+  const token = new URL(req.url).searchParams.get('token') ?? '';
+  const notFound = () => new Response('This calendar link is not valid. Get a new one from My Profile in TeamHub.', { status: 404 });
+  if (!CALENDAR_TOKEN.test(token)) return notFound();
+  try {
+    const ics = await calendarForToken(deps.sql, token, deps.now?.() ?? new Date(), deps.appUrl);
+    if (ics === null) return notFound();
+    return new Response(req.method === 'HEAD' ? null : ics, {
+      headers: {
+        'Content-Type': 'text/calendar; charset=utf-8',
+        'Content-Disposition': 'inline; filename="teamhub.ics"',
+        'Cache-Control': 'private, max-age=300',
+      },
+    });
+  } catch (err) {
+    deps.log?.({ level: 'error', calendar: 'failed', message: (err as Error)?.message });
+    return new Response('Could not load the calendar. Try again later.', { status: 500 });
   }
 }

@@ -2,7 +2,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { handleApi } from '../../src/server/http.ts';
+import { handleApi, handleCalendar } from '../../src/server/http.ts';
 import {
   DEFAULT_NOW,
   addMember,
@@ -316,5 +316,31 @@ describe('Team branding', () => {
     await h.run(t.managerId, 'updateTeamSettings', { teamId: t.teamId, accentColor: null, logoPath: null });
     const [cleared] = await h.sql`select accent_color, logo_path from public.teams where id = ${t.teamId}`;
     expect(cleared).toEqual({ accent_color: null, logo_path: null });
+  });
+});
+
+describe('Calendar subscription', () => {
+  it("serves a member their Teams' Events by secret token, and a reset cuts off the old link", async () => {
+    const t = await buildTeam(h, { roster: [['Pat', 'Forward']] });
+    const eventId = await releasedGame(h, t, { opponent: 'Rangers' });
+    await h.run(t.players.Pat.userId, 'respondAttendance', { eventId, response: 'NO', reason: null });
+
+    const { token } = await h.run(t.players.Pat.userId, 'getCalendarFeed', {});
+    expect(token).toMatch(/^[0-9a-f]{64}$/);
+    expect((await h.run(t.players.Pat.userId, 'getCalendarFeed', {})).token).toBe(token);
+
+    const get = (tok: string) => handleCalendar(new Request(`https://x/calendar?token=${tok}`), { sql: h.sql, appUrl: 'https://teamhub.test', now: () => DEFAULT_NOW });
+    const res = await get(token);
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/calendar');
+    const ics = (await res.text()).replace(/\r\n /g, '');
+    expect(ics).toContain(`UID:${eventId}@teamhub`);
+    expect(ics).toContain('SUMMARY:Game vs Rangers (Not attending)');
+
+    const { token: fresh } = await h.run(t.players.Pat.userId, 'resetCalendarFeed', {});
+    expect(fresh).not.toBe(token);
+    expect((await get(token)).status).toBe(404);
+    expect((await get(fresh)).status).toBe(200);
+    expect((await get('not-a-token')).status).toBe(404);
   });
 });
