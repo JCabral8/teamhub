@@ -1,7 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Platform, Text } from 'react-native';
-import { authError, useAuth } from '../lib/auth';
+import { authError, rememberReturnPath, useAuth } from '../lib/auth';
 import { useAction } from '../lib/hooks';
 import { supabase } from '../lib/supabase';
 import { Button, Card, ErrorText, Field, Notice, Screen, Segmented } from '../ui/components';
@@ -21,6 +21,8 @@ export default function SignIn() {
   const { busy, error, setError, run } = useAction();
   const link = useAction();
   const [emailSent, setEmailSent] = useState<string | null>(null);
+  const google = useAction();
+  const googleOn = useGoogleEnabled();
 
   useEffect(() => {
     if (session) router.replace((next as '/') || '/');
@@ -29,6 +31,7 @@ export default function SignIn() {
   const submit = () =>
     run(async () => {
       if (!email.trim() || !password) return setError('Enter your email and password.');
+      await rememberReturnPath(null); // This screen sends them on itself; drop any older saved destination.
       if (mode === 'signUp') {
         if (!name.trim()) return setError('Enter your name.');
         if (password.length < 8) return setError('Use at least 8 characters for your password.');
@@ -52,9 +55,18 @@ export default function SignIn() {
     link.run(async () => {
       setEmailSent(null);
       if (!email.trim()) return link.setError('Enter your email, then tap the button again.');
+      await rememberReturnPath(next);
       const { error: err } = await supabase.auth.signInWithOtp({ email: email.trim(), options: { shouldCreateUser: false, emailRedirectTo: siteUrl } });
       if (err) throw authError(err);
       setEmailSent(`Tap the link we sent to ${email.trim()} to sign in. You can close this page.`);
+    });
+
+  // Google sends the browser away and back to the site, already signed in.
+  const signInWithGoogle = () =>
+    google.run(async () => {
+      await rememberReturnPath(next);
+      const { error: err } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: siteUrl } });
+      if (err) throw authError(err);
     });
 
   // The emailed link signs them in and opens "Choose a new password". Supabase answers the same
@@ -84,6 +96,13 @@ export default function SignIn() {
           link.setError(null);
         }}
       />
+      {googleOn && (
+        <>
+          <Button label="Continue with Google" icon="logo-google" variant="secondary" busy={google.busy} onPress={() => void signInWithGoogle()} />
+          <ErrorText error={google.error} />
+          <Text style={[font.small, { textAlign: 'center' }]}>or use your email</Text>
+        </>
+      )}
       <Card>
         {mode === 'signUp' && <Field label="Your name" value={name} onChangeText={setName} maxLength={60} autoComplete="name" textContentType="name" />}
         <Field
@@ -122,4 +141,22 @@ export default function SignIn() {
       {checkEmail && <Notice tone="primary" title="Check your email">Confirm your address using the link we sent, then sign in.</Notice>}
     </Screen>
   );
+}
+
+/**
+ * Shows the Google button only once Google is switched on in Supabase, so it never leads to an
+ * error page. The auth settings endpoint is public and lists the enabled providers.
+ */
+function useGoogleEnabled(): boolean {
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
+    const key = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !key) return;
+    fetch(`${url}/auth/v1/settings`, { headers: { apikey: key } })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((settings: { external?: { google?: boolean } } | null) => setOn(!!settings?.external?.google))
+      .catch(() => undefined);
+  }, []);
+  return on;
 }

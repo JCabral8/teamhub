@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Session } from '@supabase/supabase-js';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { supabase } from './supabase';
@@ -42,4 +43,27 @@ export function authError(err: { message: string; code?: string }): Error {
   if (err.code === 'reauthentication_needed') return new Error('For security, sign out, sign back in, then change your password.');
   if (err.code === 'session_not_found' || /session missing/i.test(m)) return new Error('This link has expired. Ask for a new one from the sign-in page.');
   return new Error(m);
+}
+
+// Where to go after signing in through an email link or Google, which both come back to the site's
+// home page. Kept so a join link or Event link still ends up where it pointed.
+const RETURN_KEY = 'teamhub.returnPath';
+
+export async function rememberReturnPath(path: string | null | undefined): Promise<void> {
+  try {
+    if (path?.startsWith('/') && !path.startsWith('//')) await AsyncStorage.setItem(RETURN_KEY, path);
+    else await AsyncStorage.removeItem(RETURN_KEY);
+  } catch {
+    // Storage can be unavailable (private browsing); signing in still works, just lands on Home.
+  }
+}
+
+export async function takeReturnPath(): Promise<string | null> {
+  try {
+    const path = await AsyncStorage.getItem(RETURN_KEY);
+    if (path) await AsyncStorage.removeItem(RETURN_KEY);
+    return path;
+  } catch {
+    return null;
+  }
 }

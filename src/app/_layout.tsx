@@ -2,7 +2,7 @@ import { Stack, usePathname, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { AuthProvider, useAuth } from '../lib/auth';
+import { AuthProvider, takeReturnPath, useAuth } from '../lib/auth';
 import { usePushRegistration } from '../lib/push';
 import { isConfigured, openedFromPasswordReset, supabase } from '../lib/supabase';
 import { TeamsProvider, useTeams } from '../lib/teams';
@@ -40,6 +40,13 @@ function AuthGate() {
     const { data } = supabase.auth.onAuthStateChange((event) => event === 'PASSWORD_RECOVERY' && show());
     return () => data.subscription.unsubscribe();
   }, [loading, session, router]);
+
+  // After an email link or Google, pick up where the person was headed (a join link, an Event).
+  const signedIn = !!session;
+  useEffect(() => {
+    if (loading || !signedIn || openedFromPasswordReset) return;
+    void takeReturnPath().then((path) => path && router.replace(path as '/'));
+  }, [loading, signedIn, router]);
 
   useEffect(() => {
     if (loading) return;
