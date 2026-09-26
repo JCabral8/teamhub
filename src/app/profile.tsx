@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Text, View } from 'react-native';
 import { CalendarSubscribe } from '../features/CalendarSubscribe';
+import { NewPasswordForm } from '../features/NewPasswordForm';
 import { useAuth } from '../lib/auth';
 import { loadProfile, saveProfile } from '../lib/data';
 import { useAction, useLoader } from '../lib/hooks';
@@ -86,6 +87,10 @@ export default function Profile() {
       <SectionLabel>Account</SectionLabel>
       <Card style={{ paddingVertical: 0 }}>
         <ListRow first title="Email" subtitle={session?.user.email ?? ''} />
+      </Card>
+      <SectionLabel>Change password</SectionLabel>
+      <Card>
+        <NewPasswordForm buttonLabel="Change Password" />
       </Card>
       <SectionLabel>Notifications</SectionLabel>
       <Card>
