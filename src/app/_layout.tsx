@@ -1,10 +1,10 @@
 import { Stack, usePathname, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { AuthProvider, useAuth } from '../lib/auth';
 import { usePushRegistration } from '../lib/push';
-import { isConfigured } from '../lib/supabase';
+import { isConfigured, openedFromPasswordReset, supabase } from '../lib/supabase';
 import { TeamsProvider, useTeams } from '../lib/teams';
 import { AccentProvider, useAccent } from '../ui/accent';
 import { Empty, Loading, Screen } from '../ui/components';
@@ -27,6 +27,19 @@ function AuthGate() {
   const router = useRouter();
   const onSignIn = segments[0] === 'sign-in';
   usePushRegistration(session?.user.id ?? null);
+
+  // A "reset your password" email link signs the person in; take them to choose a new password.
+  const resetShown = useRef(false);
+  useEffect(() => {
+    const show = () => {
+      if (resetShown.current) return;
+      resetShown.current = true;
+      router.replace('/reset-password');
+    };
+    if (!loading && session && openedFromPasswordReset) show();
+    const { data } = supabase.auth.onAuthStateChange((event) => event === 'PASSWORD_RECOVERY' && show());
+    return () => data.subscription.unsubscribe();
+  }, [loading, session, router]);
 
   useEffect(() => {
     if (loading) return;
@@ -56,6 +69,7 @@ function AuthGate() {
       <Stack.Screen name="settings/[teamId]/index" options={{ title: 'Team Settings' }} />
       <Stack.Screen name="settings/[teamId]/[section]" options={{ title: 'Settings' }} />
       <Stack.Screen name="profile" options={{ title: 'My Profile' }} />
+      <Stack.Screen name="reset-password" options={{ title: 'New Password', headerBackVisible: false }} />
       <Stack.Screen name="stats" options={{ title: 'Statistics' }} />
       <Stack.Screen name="notifications" options={{ title: 'Notifications' }} />
     </Stack>

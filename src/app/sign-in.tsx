@@ -1,26 +1,13 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Platform, Text } from 'react-native';
-import { useAuth } from '../lib/auth';
+import { authError, useAuth } from '../lib/auth';
 import { useAction } from '../lib/hooks';
 import { supabase } from '../lib/supabase';
 import { Button, Card, ErrorText, Field, Notice, Screen, Segmented } from '../ui/components';
 import { font } from '../ui/theme';
 
 type Mode = 'signIn' | 'signUp';
-
-/** Supabase auth messages are technical; say what the person should do instead. */
-function authError(err: { message: string; code?: string }): Error {
-  const m = err.message;
-  if (err.code === 'invalid_credentials' || /invalid login credentials/i.test(m)) return new Error('Wrong email or password.');
-  if (err.code === 'user_already_exists' || /already registered/i.test(m)) return new Error('An account with this email already exists. Sign in instead.');
-  if (err.code === 'email_address_invalid' || /validate email|invalid format/i.test(m)) return new Error('Enter a valid email address.');
-  if (err.code === 'weak_password' || /password should/i.test(m)) return new Error('Choose a stronger password: at least 8 characters.');
-  if (err.code === 'otp_disabled' || /signups not allowed/i.test(m)) return new Error('No account uses this email. Create an account first.');
-  if (err.code === 'over_email_send_rate_limit' || /only request this after|email rate limit/i.test(m)) return new Error('A sign-in email was sent recently. Check your inbox, or wait a minute and try again.');
-  if (err.code === 'over_request_rate_limit' || /rate limit|too many/i.test(m)) return new Error('Too many attempts. Wait a minute and try again.');
-  return new Error(m);
-}
 
 export default function SignIn() {
   const { session } = useAuth();
@@ -33,7 +20,7 @@ export default function SignIn() {
   const [checkEmail, setCheckEmail] = useState(false);
   const { busy, error, setError, run } = useAction();
   const link = useAction();
-  const [linkSent, setLinkSent] = useState(false);
+  const [emailSent, setEmailSent] = useState<string | null>(null);
 
   useEffect(() => {
     if (session) router.replace((next as '/') || '/');
@@ -60,19 +47,25 @@ export default function SignIn() {
 
   // Sign in without a password: the emailed link opens the site already signed in. Only for
   // existing accounts, since creating one needs a name.
+  const siteUrl = Platform.OS === 'web' && typeof window !== 'undefined' ? window.location.origin : undefined;
   const sendLink = () =>
     link.run(async () => {
-      setLinkSent(false);
+      setEmailSent(null);
       if (!email.trim()) return link.setError('Enter your email, then tap the button again.');
-      const { error: err } = await supabase.auth.signInWithOtp({
-        email: email.trim(),
-        options: {
-          shouldCreateUser: false,
-          emailRedirectTo: Platform.OS === 'web' && typeof window !== 'undefined' ? window.location.origin : undefined,
-        },
-      });
+      const { error: err } = await supabase.auth.signInWithOtp({ email: email.trim(), options: { shouldCreateUser: false, emailRedirectTo: siteUrl } });
       if (err) throw authError(err);
-      setLinkSent(true);
+      setEmailSent(`Tap the link we sent to ${email.trim()} to sign in. You can close this page.`);
+    });
+
+  // The emailed link signs them in and opens "Choose a new password". Supabase answers the same
+  // whether or not the email has an account, so this never reveals who is signed up.
+  const sendReset = () =>
+    link.run(async () => {
+      setEmailSent(null);
+      if (!email.trim()) return link.setError('Enter your email, then tap Forgot password again.');
+      const { error: err } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: siteUrl });
+      if (err) throw authError(err);
+      setEmailSent(`If ${email.trim()} has a TeamHub account, we've emailed it a link to choose a new password.`);
     });
 
   return (
@@ -115,13 +108,16 @@ export default function SignIn() {
         <Button label={mode === 'signIn' ? 'Sign In' : 'Create Account'} onPress={submit} busy={busy} />
         {mode === 'signIn' && (
           <>
-            <Button label="Forgot password? Email me a sign-in link" icon="mail-outline" variant="ghost" onPress={() => void sendLink()} busy={link.busy} />
+            <Button label="Forgot password?" icon="key-outline" variant="ghost" disabled={link.busy} onPress={() => void sendReset()} />
+            <Button label="Email me a sign-in link instead" icon="mail-outline" variant="ghost" disabled={link.busy} onPress={() => void sendLink()} />
             <ErrorText error={link.error} />
           </>
         )}
       </Card>
-      {linkSent && mode === 'signIn' && (
-        <Notice tone="primary" title="Check your email">Tap the link we sent to {email.trim()} to sign in. You can close this page.</Notice>
+      {emailSent && mode === 'signIn' && (
+        <Notice tone="primary" title="Check your email">
+          {emailSent}
+        </Notice>
       )}
       {checkEmail && <Notice tone="primary" title="Check your email">Confirm your address using the link we sent, then sign in.</Notice>}
     </Screen>
