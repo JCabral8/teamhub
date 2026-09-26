@@ -189,6 +189,11 @@ export async function releaseEventAttendance(tx: Tx, eventId: string, now: Date,
     update public.callup_invitations set attendance_round = ${ec.event.attendance_round + 1}
     where event_id = ${eventId} and closed_at is null and attendance_round = ${ec.event.attendance_round}
   `;
+  // "Ready to send" notices are done with once attendance is out.
+  await tx`
+    update public.notifications set read_at = ${now}
+    where event_id = ${eventId} and type = 'ATTENDANCE_READY' and read_at is null
+  `;
   const summary = eventSummary(ec.event, ec.team);
   await notify(tx, toMany(invitees, ec.team.id, eventId, N.eventInvitation(summary)));
   if (actorId === null) {
@@ -254,6 +259,11 @@ export async function respondAttendance(
 
   const result = processAttendanceChange(attendanceState(ec), ctx.actorId, answer, reason, ctx.now);
   await saveRosterUpdates(ctx.tx, eventId, result.updates, ctx.now);
+  // The request has been answered, so it no longer waits in the player's notifications.
+  await ctx.tx`
+    update public.notifications set read_at = ${ctx.now}
+    where user_id = ${ctx.actorId} and event_id = ${eventId} and type = 'EVENT_INVITATION' and read_at is null
+  `;
   if (entry.source === 'CALLUP') {
     await ctx.tx`
       update public.callup_invitations set response = ${answer}, responded_at = ${ctx.now}
