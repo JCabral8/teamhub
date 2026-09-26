@@ -36,6 +36,17 @@ describe('Responses (#1–#3)', () => {
     expect(await rosterRow(h, eventId, t.players.F1.userId)).toMatchObject({ response: 'YES', response_origin: 'PLAYER', pending_since: null });
   });
 
+  it('answering marks the attendance request notification read', async () => {
+    const t = await buildTeam(h);
+    const eventId = await releasedGame(h, t);
+    const unreadInvites = (userId: string) =>
+      h.sql`select id from public.notifications where user_id = ${userId} and event_id = ${eventId} and type = 'EVENT_INVITATION' and read_at is null`;
+    expect(await unreadInvites(t.players.F1.userId)).toHaveLength(1);
+    await h.run(t.players.F1.userId, 'respondAttendance', { eventId, response: 'YES' });
+    expect(await unreadInvites(t.players.F1.userId)).toHaveLength(0);
+    expect(await unreadInvites(t.players.F2.userId)).toHaveLength(1);
+  });
+
   it('#2 player selects No with a reason of at most 75 characters', async () => {
     const t = await buildTeam(h);
     const eventId = await releasedGame(h, t);
