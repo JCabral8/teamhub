@@ -1,6 +1,7 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { Text, View } from 'react-native';
-import { toPlayerRosterView } from '../../domain/index.ts';
+import { Text } from 'react-native';
+import { EventHeader } from '../../features/event/EventHeader';
+import { Lineup } from '../../features/event/Lineup';
 import { ManagerRoster } from '../../features/event/ManagerRoster';
 import { PlayerAttendance } from '../../features/event/PlayerAttendance';
 import { SendAttendance } from '../../features/event/SendAttendance';
@@ -8,11 +9,10 @@ import { useAuth } from '../../lib/auth';
 import { loadEventDetail, loadTeamDetail } from '../../lib/data';
 import { useLoader, useRealtime } from '../../lib/hooks';
 import { isManagerOf, useTeams } from '../../lib/teams';
-import { Badge, Button, Card, Empty, ErrorText, ListRow, Loading, Screen, SectionLabel } from '../../ui/components';
-import { EVENT_TYPE_OPTIONS, STANDING_DISPLAY, eventTitle, eventWhen } from '../../ui/format';
-import { font, space } from '../../ui/theme';
+import { Button, Card, Empty, ErrorText, Loading, Screen } from '../../ui/components';
+import { EVENT_TYPE_OPTIONS } from '../../ui/format';
+import { font } from '../../ui/theme';
 import { TeamAccent } from '../../ui/TeamAccent';
-import { Avatar } from '../../ui/Avatar';
 
 export default function EventScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -63,12 +63,7 @@ export default function EventScreen() {
           }}
         />
         <ErrorText error={error} />
-        <View style={{ gap: space.xs }}>
-          <Text style={font.title}>{eventTitle(event)}</Text>
-          <Text style={font.body}>{eventWhen(event.starts_at, team.timezone)}</Text>
-          {event.location ? <Text style={font.small}>{event.location}</Text> : null}
-          {teams.active.length > 1 ? <Text style={font.small}>{team.name}</Text> : null}
-        </View>
+        <EventHeader event={event} team={team} showTeamName={teams.active.length > 1} />
         {event.notes ? (
           <Card>
             <Text style={font.label}>Notes</Text>
@@ -84,47 +79,9 @@ export default function EventScreen() {
             <ManagerRoster detail={detail} team={data.team} onChanged={() => void reload()} />
           </>
         ) : (
-          <PlayerRoster detail={detail} released={released} />
+          <Lineup detail={detail} />
         )}
       </Screen>
     </TeamAccent>
-  );
-}
-
-const STANDING_ORDER = { ATTENDING: 0, PENDING_APPROVAL: 1, NO_RESPONSE: 2, NOT_ATTENDING: 3 } as const;
-
-/**
- * The player view: no Positions, no callup marking or ranking (spec §44, §45, §47). Once attendance
- * is out, who's coming is listed first, each group alphabetical. A Game's roster reads as the lineup.
- * Counts say "attending" rather than "Players" because players cannot tell who is a Goalie (spec §33).
- */
-function PlayerRoster({ detail, released }: { detail: Awaited<ReturnType<typeof loadEventDetail>>; released: boolean }) {
-  const alphabetical = toPlayerRosterView(detail.roster);
-  const people = released ? [...alphabetical].sort((a, b) => STANDING_ORDER[a.standing] - STANDING_ORDER[b.standing]) : alphabetical;
-  const attending = people.filter((p) => p.standing === 'ATTENDING').length;
-  const heading = detail.event.type === 'GAME' ? 'Lineup' : 'Roster';
-  return (
-    <>
-      <SectionLabel>{released ? `${heading} · ${attending} attending` : heading}</SectionLabel>
-      <Card style={{ paddingVertical: people.length ? 0 : undefined }}>
-        {people.length ? (
-          people.map((p, i) => {
-            const s = STANDING_DISPLAY[p.standing];
-            return (
-              <ListRow
-                key={p.userId}
-                first={i === 0}
-                title={p.displayName}
-                leading={<Avatar name={p.displayName} path={detail.avatars[p.userId]} />}
-                subtitle={p.reason}
-                right={released ? <Badge label={s.label} tone={s.tone} /> : undefined}
-              />
-            );
-          })
-        ) : (
-          <Text style={font.small}>No one is on this roster yet.</Text>
-        )}
-      </Card>
-    </>
   );
 }

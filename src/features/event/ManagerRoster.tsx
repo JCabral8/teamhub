@@ -1,4 +1,4 @@
-// Manager Event roster (spec §33–§36, §45, §49): summary, coverage warnings, Position groups, callups.
+// Manager Event roster (spec §33–§36, §45, §49): summary, coverage warnings, the lineup by Position, callups.
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
@@ -6,7 +6,6 @@ import {
   calculateAttendanceCounts,
   calculatePositionCoverage,
   formatAttendanceSummary,
-  groupRosterByPosition,
   standingOf,
   type EventRosterEntry,
 } from '../../domain/index.ts';
@@ -18,6 +17,7 @@ import { STANDING_DISPLAY } from '../../ui/format';
 import { colors, font, space } from '../../ui/theme';
 import { useAccent } from '../../ui/accent';
 import { Avatar } from '../../ui/Avatar';
+import { Lineup } from './Lineup';
 
 export function ManagerRoster({ detail, team, onChanged }: { detail: EventDetail; team: TeamDetail; onChanged: () => void }) {
   const { event, roster, requirements, invites } = detail;
@@ -25,7 +25,6 @@ export function ManagerRoster({ detail, team, onChanged }: { detail: EventDetail
   const config = team.config;
   const counts = calculateAttendanceCounts(roster, config);
   const coverage = calculatePositionCoverage(roster, requirements, config);
-  const groups = groupRosterByPosition(roster, config);
   const [selected, setSelected] = useState<EventRosterEntry | null>(null);
   const [adding, setAdding] = useState(false);
   const [editingNeeds, setEditingNeeds] = useState(false);
@@ -102,31 +101,7 @@ export function ManagerRoster({ detail, team, onChanged }: { detail: EventDetail
         </Notice>
       )}
 
-      {groups.map((g) => (
-        <View key={g.positionId ?? 'none'} style={{ gap: space.md }}>
-          {/* The number is attending players only (spec §35). */}
-          <SectionLabel>{`${g.name} (${g.count})`}</SectionLabel>
-          <Card style={{ paddingVertical: 0 }}>
-            {g.entries.map((e, i) => {
-              const s = STANDING_DISPLAY[standingOf(e)];
-              return (
-                <Pressable key={e.userId} accessibilityRole="button" onPress={() => setSelected(e)}>
-                  <ListRow
-                    first={i === 0}
-                    title={e.displayName}
-                    leading={<Avatar name={e.displayName} path={detail.avatars[e.userId]} />}
-                    subtitle={[e.source === 'CALLUP' && 'Callup', e.responseOrigin === 'SYSTEM_AVAILABILITY' && 'Marked unavailable', e.response === 'NO' && e.reason]
-                      .filter(Boolean)
-                      .join(' · ')}
-                    right={<Badge label={s.label} tone={s.tone} />}
-                  />
-                </Pressable>
-              );
-            })}
-          </Card>
-        </View>
-      ))}
-      {!roster.length && <Text style={font.small}>No one is on this Event roster yet.</Text>}
+      <Lineup detail={detail} manager={{ config, onSelect: setSelected }} />
 
       {invites.length > 0 && (
         <>

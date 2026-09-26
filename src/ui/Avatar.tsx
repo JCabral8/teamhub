@@ -2,6 +2,7 @@
 import { Image, StyleSheet, Text, View } from 'react-native';
 import { imageUrl } from '../lib/images';
 import { paletteFor, useAccent } from './accent';
+import { hexToRgb } from './color';
 import { colors } from './theme';
 
 function initials(name: string): string {
@@ -52,3 +53,24 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
 });
+
+// Colours for opponents without a logo; the name always picks the same one.
+const OPPONENT_COLORS = ['#B91C1C', '#1D4ED8', '#047857', '#7C3AED', '#C2410C', '#0F766E', '#BE185D', '#374151', '#A16207', '#1E3A8A'];
+
+/**
+ * A made-up badge for an opponent: their initials on a colour picked from their name, skipping
+ * colours too close to `avoid` (our own Team colour) so the two sides look different.
+ */
+export function OpponentLogo({ name, size = 40, avoid }: { name: string; size?: number; avoid?: string | null }) {
+  let hash = 0;
+  for (const ch of name.trim().toLowerCase()) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  const ours = avoid ? hexToRgb(paletteFor(avoid).accent) : null;
+  const tooClose = (hex: string) => {
+    if (!ours) return false;
+    const c = hexToRgb(hex);
+    return Math.hypot(c.r - ours.r, c.g - ours.g, c.b - ours.b) < 120;
+  };
+  let color = OPPONENT_COLORS[hash % OPPONENT_COLORS.length];
+  for (let i = 1; tooClose(color) && i < OPPONENT_COLORS.length; i++) color = OPPONENT_COLORS[(hash + i) % OPPONENT_COLORS.length];
+  return <TeamLogo team={{ name, logo_path: null, accent_color: color }} size={size} />;
+}
