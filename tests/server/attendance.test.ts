@@ -477,6 +477,9 @@ describe('Wireframe extras', () => {
     const notes = await notificationsFor(h, t.players.F1.userId, 'NEW_EVENT');
     expect(notes).toHaveLength(2);
     expect(notes[1].body).toMatch(/and 1 more date/);
+    // An Event entered after it happened isn't announced.
+    await createGame(h, t, { date: '2026-09-20', notifyPlayers: true });
+    expect(await notificationsFor(h, t.players.F1.userId, 'NEW_EVENT')).toHaveLength(2);
     await h.run(t.managerId, 'updateTeamSettings', { teamId: t.teamId, notifyNewEvents: false });
     await h.run(t.managerId, 'createEvent', { teamId: t.teamId, type: 'PRACTICE', startsAt: zonedToUtc('2026-10-14', '19:00', TZ).toISOString() });
     expect(await notificationsFor(h, t.players.F1.userId, 'NEW_EVENT')).toHaveLength(2);
