@@ -101,7 +101,8 @@ export async function createEvent(ctx: CommandContext, teamId: string, fields: E
   const team = await loadTeam(ctx.tx, teamId, true);
   await requireManager(ctx.tx, teamId, ctx.actorId);
   const result = await insertEvent(ctx.tx, team, fields, ctx.actorId, ctx.now);
-  if (notifyPlayers ?? team.notify_new_events) await announce(ctx.tx, team, result.eventId, fields, 0);
+  // An Event entered after it happened (for the record) isn't news.
+  if ((notifyPlayers ?? team.notify_new_events) && fields.startsAt > ctx.now) await announce(ctx.tx, team, result.eventId, fields, 0);
   return result;
 }
 
@@ -126,9 +127,10 @@ export async function createEvents(
     results.push({ date, ...(await insertEvent(ctx.tx, team, fields, ctx.actorId, ctx.now)) });
   }
   // One announcement for the whole set, on the first Event, rather than one per date.
-  if ((notifyPlayers ?? team.notify_new_events) && results.length) {
-    const startsAt = zonedToUtc(sorted[0], time, team.timezone);
-    await announce(ctx.tx, team, results[0].eventId, { ...template, startsAt, endsAt: null }, results.length - 1);
+  const upcoming = results.filter((r) => zonedToUtc(r.date, time, team.timezone) > ctx.now);
+  if ((notifyPlayers ?? team.notify_new_events) && upcoming.length) {
+    const startsAt = zonedToUtc(upcoming[0].date, time, team.timezone);
+    await announce(ctx.tx, team, upcoming[0].eventId, { ...template, startsAt, endsAt: null }, upcoming.length - 1);
   }
   return results;
 }
