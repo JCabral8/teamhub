@@ -10,10 +10,10 @@ The V1 specification lives in [`docs/spec/`](docs/spec). Where the spec left a g
 |---|---|
 | `src/domain/` | Pure TypeScript business rules: Positions, roster capacity, attendance, scheduling, callups, governance, statistics, notification text. No I/O. Shared by the app and the server. |
 | `src/server/` | Services that load state, apply the domain rules and persist the result inside one transaction. `commands.ts` is the full command API. `push.ts` delivers notifications to phones. |
-| `src/app/` | Expo Router screens: Home, Schedule, Team and Other tabs, Event detail, Event create and edit, Team Settings, join, profile, statistics. |
-| `src/features/` | Larger screen parts: Event attendance and roster, Team Settings sections, joining a Team. |
+| `src/app/` | Expo Router screens, laid out after the wireframes in `design/`: Home, Schedule, Team and Other tabs; Event details, roster, callups, Schedule Attendance and roster settings; Create and Edit Event; the Team tab's screens; Team Settings; profile, account, stats, history and Mark Unavailable. |
+| `src/features/` | Larger screen parts and their hooks: Event attendance, summary and roster sheets, Team Settings sections, the Team tab's selected Team, joining a Team. |
 | `src/lib/` | Supabase client, the `api()` command client, auth and Team context, read queries and hooks. |
-| `src/ui/` | Shared components, calendar, formatting and design tokens. |
+| `src/ui/` | Shared components, Event type icons and status pills, calendar, formatting and design tokens (`theme.ts`). |
 | `supabase/migrations/` | Schema, constraints, row-level security, realtime publication and the per-minute job schedule. |
 | `supabase/functions/api` | Edge Function for every client write: `POST { command, params }` with the user's access token. |
 | `supabase/functions/calendar` | Edge Function serving each person's schedule as an iCalendar subscription feed (`GET ?token=…`, no sign-in; the token is the key). |

@@ -52,7 +52,7 @@ export default function Stats() {
       ) : (
         <>
           <SectionLabel>{kind === 'regular' ? 'Events sent to the roster' : 'Callup invitations'}</SectionLabel>
-          <Card style={{ paddingVertical: rows.length ? 0 : undefined }}>
+          <Card flush={rows.length > 0}>
             {rows.length ? (
               rows.map((r, i) => (
                 <View key={r.userId} style={[styles.row, i > 0 && styles.divider]}>

@@ -1,19 +1,21 @@
+import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { CalendarSubscribe } from '../features/CalendarSubscribe';
-import { NewPasswordForm } from '../features/NewPasswordForm';
 import { useAuth } from '../lib/auth';
 import { loadProfile, saveProfile } from '../lib/data';
 import { useAction, useLoader } from '../lib/hooks';
 import { pickImage, prepareImage, removeImage, uploadImage } from '../lib/images';
-import { supabase } from '../lib/supabase';
+import { useAccent } from '../ui/accent';
 import { Avatar } from '../ui/Avatar';
-import { Button, ButtonRow, Card, ErrorText, Field, ListRow, Loading, Notice, Screen, SectionLabel } from '../ui/components';
+import { Button, Card, ErrorText, Field, ListRow, Loading, Notice, Screen, SectionLabel } from '../ui/components';
 import { font, space } from '../ui/theme';
 
-/** OTHER → MY PROFILE (spec §17). The preferred Position is a preference only; Managers set the official one. */
+/** Wireframe 13 "My Profile" (spec §17). The preferred Position is a preference only; Managers set the official one. */
 export default function Profile() {
+  const router = useRouter();
   const { session, userId } = useAuth();
+  const accent = useAccent();
   const { data, loading, error, reload } = useLoader(() => loadProfile(userId!), [userId]);
   const [name, setName] = useState('');
   const [position, setPosition] = useState('');
@@ -29,11 +31,13 @@ export default function Profile() {
 
   if (loading && !data) return <Loading />;
 
+  const dirty = !!data && (name.trim() !== data.display_name || (position.trim() || null) !== data.preferred_position);
   const save = () =>
     run(async () => {
       setSaved(false);
       if (!name.trim()) return setError('Enter your name.');
       await saveProfile(userId!, { display_name: name.trim(), preferred_position: position.trim() || null });
+      await reload();
       setSaved(true);
     });
 
@@ -57,17 +61,19 @@ export default function Profile() {
   return (
     <Screen>
       <ErrorText error={error} />
-      <Card>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg }}>
-          <Avatar name={data?.display_name ?? name} path={avatarPath} size={80} />
-          <Text style={[font.small, { flex: 1 }]}>Your profile picture shows next to your name on Team and Event rosters.</Text>
+      <View style={styles.head}>
+        <Pressable accessibilityRole="button" accessibilityLabel={avatarPath ? 'Change photo' : 'Add photo'} onPress={() => void changePhoto()}>
+          <Avatar name={data?.display_name ?? name} path={avatarPath} size={96} />
+        </Pressable>
+        <Text style={font.title}>{data?.display_name}</Text>
+        <Text style={font.small}>{session?.user.email}</Text>
+        <View style={styles.photoActions}>
+          <Button label={avatarPath ? 'Change Photo' : 'Add Photo'} icon="camera-outline" variant="ghost" size="sm" busy={photo.busy} onPress={() => void changePhoto()} />
+          {avatarPath && <Button label="Remove" variant="ghost" size="sm" disabled={photo.busy} onPress={() => void removePhoto()} />}
         </View>
-        <ButtonRow>
-          <Button label={avatarPath ? 'Change Photo' : 'Add Photo'} icon="camera-outline" variant="secondary" busy={photo.busy} onPress={() => void changePhoto()} style={{ flex: 1 }} />
-          {avatarPath && <Button label="Remove" variant="ghost" disabled={photo.busy} onPress={() => void removePhoto()} style={{ flex: 1 }} />}
-        </ButtonRow>
         <ErrorText error={photo.error} />
-      </Card>
+      </View>
+
       <Card>
         <Field label="Name" value={name} onChangeText={setName} maxLength={60} />
         <Field
@@ -75,30 +81,26 @@ export default function Profile() {
           value={position}
           onChangeText={setPosition}
           maxLength={40}
-          placeholder="Forward"
+          placeholder="Forward / Defence"
           hint="Shown to a Manager when you ask to join. Your Team Position is set by the Manager."
         />
         <ErrorText error={saveError} />
-        <Button label="Save" busy={busy} onPress={() => void save()} />
-        {saved && <Notice tone="positive" title="Saved" />}
+        {saved && !dirty ? <Notice tone="positive" title="Saved" /> : <Button label="Save" busy={busy} disabled={!dirty} onPress={() => void save()} />}
       </Card>
+
+      <Card flush>
+        <ListRow first title="Email" subtitle={session?.user.email ?? ''} />
+        <ListRow title="Change Password" titleStyle={{ color: accent.ink }} onPress={() => router.push('/account')} />
+        <ListRow title="Notification Preferences" titleStyle={{ color: accent.ink }} onPress={() => router.push('/account')} />
+      </Card>
+
       <SectionLabel>Calendar</SectionLabel>
       <CalendarSubscribe />
-      <SectionLabel>Account</SectionLabel>
-      <Card style={{ paddingVertical: 0 }}>
-        <ListRow first title="Email" subtitle={session?.user.email ?? ''} />
-      </Card>
-      <SectionLabel>Change password</SectionLabel>
-      <Card>
-        <NewPasswordForm buttonLabel="Change Password" />
-      </Card>
-      <SectionLabel>Notifications</SectionLabel>
-      <Card>
-        <Text style={font.small}>
-          Attendance requests, roster changes and Manager alerts arrive as push notifications. Turn them on or off in your phone's settings for TeamHub.
-        </Text>
-      </Card>
-      <Button label="Sign Out" variant="danger" onPress={() => void supabase.auth.signOut()} />
     </Screen>
   );
 }
+
+const styles = StyleSheet.create({
+  head: { alignItems: 'center', gap: space.xs },
+  photoActions: { flexDirection: 'row', gap: space.sm },
+});

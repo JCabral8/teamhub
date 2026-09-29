@@ -1,6 +1,7 @@
 // Display helpers. Event times always render in the Team's time zone (spec §23).
 import { Platform } from 'react-native';
 import { notifications, type EventType, type RosterStanding } from '../domain/index.ts';
+import type { IconName } from './components';
 import type { Tone } from './theme';
 
 export const EVENT_TYPE_OPTIONS: { value: EventType; label: string }[] = [
@@ -14,6 +15,12 @@ export const EVENT_TYPE_OPTIONS: { value: EventType; label: string }[] = [
 
 export function eventTitle(e: { type: EventType; name: string | null; opponent: string | null }): string {
   return notifications.eventLabel(e);
+}
+
+/** The heading the wireframes use: "Slapsticks vs Bulldogs" for a Game, otherwise the Event's name. */
+export function matchTitle(e: { type: EventType; name: string | null; opponent: string | null }, teamName: string): string {
+  if (!e.name?.trim() && e.opponent?.trim()) return `${teamName} vs ${e.opponent.trim()}`;
+  return eventTitle(e);
 }
 
 export function eventWhen(startsAt: string | Date, timezone: string): string {
@@ -32,12 +39,28 @@ export function clock(time: string): string {
   return `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
 }
 
-export const STANDING_DISPLAY: Record<RosterStanding, { label: string; tone: Tone }> = {
-  ATTENDING: { label: 'Attending', tone: 'positive' },
-  PENDING_APPROVAL: { label: 'Pending Approval', tone: 'attention' },
-  NO_RESPONSE: { label: 'No Response', tone: 'neutral' },
-  NOT_ATTENDING: { label: 'Not Attending', tone: 'negative' },
+export const STANDING_DISPLAY: Record<RosterStanding, { label: string; tone: Tone; icon: IconName }> = {
+  ATTENDING: { label: 'Attending', tone: 'positive', icon: 'checkmark-circle' },
+  PENDING_APPROVAL: { label: 'Pending Approval', tone: 'attention', icon: 'time' },
+  NO_RESPONSE: { label: 'No Response', tone: 'neutral', icon: 'help-circle' },
+  NOT_ATTENDING: { label: 'Not Attending', tone: 'negative', icon: 'close-circle' },
 };
+
+const SHORT_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** "Fri, Sep 18, 2026" (or without the year) for a YYYY-MM-DD date. */
+export function shortDate(date: string, withYear = true): string {
+  const [y, m, d] = date.split('-').map(Number);
+  const weekday = SHORT_WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
+  return `${weekday}, ${SHORT_MONTHS[m - 1]} ${d}${withYear ? `, ${y}` : ''}`;
+}
+
+/** The two halves of the date column in schedule lists: "Thu" and "Sep 11". */
+export function dateColumn(date: string): { weekday: string; day: string } {
+  const [y, m, d] = date.split('-').map(Number);
+  return { weekday: SHORT_WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()], day: `${SHORT_MONTHS[m - 1]} ${d}` };
+}
 
 export function deviceTimeZone(): string {
   return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';

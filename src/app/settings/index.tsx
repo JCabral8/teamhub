@@ -1,6 +1,7 @@
 import { Redirect, useRouter } from 'expo-router';
 import { Text } from 'react-native';
 import { isManagerOf, useTeams } from '../../lib/teams';
+import { TeamLogo } from '../../ui/Avatar';
 import { Card, Empty, ListRow, Loading, Screen } from '../../ui/components';
 import { font } from '../../ui/theme';
 
@@ -14,10 +15,10 @@ export default function WhichTeam() {
   if (managed.length === 1) return <Redirect href={{ pathname: '/settings/[teamId]', params: { teamId: managed[0].team.id } }} />;
   return (
     <Screen>
-      <Text style={font.title}>Which Team?</Text>
-      <Card style={{ paddingVertical: 0 }}>
+      <Text style={font.heading}>Select a Team</Text>
+      <Card flush>
         {managed.map((m, i) => (
-          <ListRow key={m.team.id} first={i === 0} title={m.team.name} onPress={() => router.push({ pathname: '/settings/[teamId]', params: { teamId: m.team.id } })} />
+          <ListRow key={m.team.id} first={i === 0} title={m.team.name} leading={<TeamLogo team={m.team} size={32} />} onPress={() => router.push({ pathname: '/settings/[teamId]', params: { teamId: m.team.id } })} />
         ))}
       </Card>
     </Screen>

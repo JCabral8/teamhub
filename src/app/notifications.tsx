@@ -23,7 +23,7 @@ export default function Notifications() {
   return (
     <Screen onRefresh={reload}>
       <ErrorText error={error} />
-      <Card style={{ paddingVertical: list.length ? 0 : undefined }}>
+      <Card flush={list.length > 0}>
         {list.length ? (
           list.map((n, i) => (
             <ListRow

@@ -1,31 +1,22 @@
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
-import { Text, View } from 'react-native';
-import { api } from '../../lib/api';
-import { loadEvents, loadTeamDetail, type TeamMember } from '../../lib/data';
-import { useAction, useLoader, useRealtime } from '../../lib/hooks';
-import { shareOrCopy } from '../../lib/share';
+import { StyleSheet, Text, View } from 'react-native';
+import { localDate, localTime } from '../../domain/index.ts';
+import { loadEvents, loadTeamDetail } from '../../lib/data';
+import { useLoader, useRealtime } from '../../lib/hooks';
 import { isManagerOf, useTeams } from '../../lib/teams';
-import { useAccent } from '../../ui/accent';
-import { Avatar, TeamLogo } from '../../ui/Avatar';
-import { Badge, Button, Card, Chips, Empty, ErrorText, ListRow, Loading, Notice, Screen, SectionLabel, Segmented, useConfirm } from '../../ui/components';
-import { EventRow } from '../../ui/EventRow';
-import { eventTitle, eventWhen, joinLink } from '../../ui/format';
+import { TeamLogo } from '../../ui/Avatar';
+import { Button, Card, CountBubble, Empty, ErrorText, ListRow, Loading, Notice, Screen, SectionLabel, Select } from '../../ui/components';
+import { EVENT_TYPE_STYLE, EventTypeIcon } from '../../ui/EventTypeIcon';
+import { clock, shortDate } from '../../ui/format';
 import { font, space } from '../../ui/theme';
 
-type Tab = 'roster' | 'games' | 'events' | 'info';
-
+/** Wireframes 6 and 7 "Team Tab": pick a Team, see its next Event, then everything about the Team. */
 export default function TeamScreen() {
   const router = useRouter();
   const teams = useTeams();
   const membership = teams.selected;
   const team = membership?.team;
   const manager = isManagerOf(membership);
-  const [tab, setTab] = useState<Tab>('roster');
-  const [copied, setCopied] = useState(false);
-  const accent = useAccent();
-  const leave = useAction();
-  const confirm = useConfirm();
 
   const { data, error, loading, reload } = useLoader(async () => {
     if (!team) return null;
@@ -42,7 +33,7 @@ export default function TeamScreen() {
         {teams.memberships
           .filter((m) => m.status === 'PENDING')
           .map((m) => (
-            <Notice key={m.id} tone="attention" title={`Waiting to join ${m.team.name}`}>
+            <Notice key={m.id} tone="attention" icon="time" title={`Waiting to join ${m.team.name}`}>
               A Manager needs to approve your request before you can see the Team.
             </Notice>
           ))}
@@ -54,200 +45,80 @@ export default function TeamScreen() {
   }
   if (loading && !data) return <Loading />;
 
-  const events = data?.events ?? [];
-  const next = events[0];
+  const next = data?.events[0];
   const members = (data?.detail.members ?? []).filter((m) => m.status === 'ACTIVE');
-  const pendingCount = (data?.detail.members ?? []).filter((m) => m.status === 'PENDING').length;
-  const openEvent = (id: string) => router.push({ pathname: '/event/[id]', params: { id } });
-
-  const shareLink = async () => {
-    const link = joinLink(team.join_code);
-    if (await shareOrCopy(`Join ${team.name} on TeamHub: ${link}`, link)) setCopied(true);
-  };
-
-  const onLeave = async () => {
-    const ok = await confirm.ask(`Leave ${team.name}?`, 'You will stop receiving attendance requests for this Team.', 'Leave Team', true);
-    if (!ok) return;
-    await leave.run(async () => {
-      await api('leaveTeam', { teamId: team.id });
-      await teams.reload();
-    });
-  };
+  const joinRequests = (data?.detail.members ?? []).filter((m) => m.status === 'PENDING').length;
+  const count = (role: 'ROSTER' | 'CALLUP') => members.filter((m) => m.roster_role === role).length;
+  const managers = members.filter((m) => m.manager_role).length;
+  const go = (pathname: '/team/events' | '/team/roster' | '/team/info', params?: Record<string, string>) => router.push({ pathname, params });
+  const people = (kind: 'players' | 'callups' | 'managers') => router.push({ pathname: '/team/people', params: { kind } });
 
   return (
     <Screen onRefresh={reload}>
-      {teams.active.length > 1 && (
-        <Chips options={teams.active.map((m) => ({ value: m.team.id, label: m.team.name }))} value={team.id} onChange={teams.select} />
-      )}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
-        <TeamLogo team={team} size={56} />
-        <View style={{ flex: 1 }}>
-          <Text style={font.title} numberOfLines={2}>
+      {teams.active.length > 1 ? (
+        <Select
+          title="Choose a Team"
+          options={teams.active.map((m) => ({ value: m.team.id, label: m.team.name, icon: <TeamLogo team={m.team} size={28} /> }))}
+          value={team.id}
+          onChange={teams.select}
+        />
+      ) : (
+        <View style={styles.teamHead}>
+          <TeamLogo team={team} size={44} />
+          <Text style={[font.title, { flex: 1 }]} numberOfLines={2}>
             {team.name}
           </Text>
-          {team.arena ? <Text style={font.small}>{team.arena}</Text> : null}
         </View>
-      </View>
+      )}
       <ErrorText error={error} />
 
-      <SectionLabel>Next Team Event</SectionLabel>
+      <SectionLabel>Next Event</SectionLabel>
       <Card>
         {next ? (
-          <View style={{ gap: space.xs }}>
-            <Text style={font.heading}>{eventTitle(next)}</Text>
-            <Text style={font.small}>{eventWhen(next.starts_at, team.timezone)}</Text>
-            {next.location ? <Text style={font.small}>{next.location}</Text> : null}
-            <Button label="Open" variant="secondary" onPress={() => openEvent(next.id)} style={{ marginTop: space.sm }} />
-          </View>
+          <>
+            <View style={styles.next}>
+              <EventTypeIcon type={next.type} size={44} />
+              <View style={{ flex: 1, gap: 2 }}>
+                <Text style={font.heading}>{EVENT_TYPE_STYLE[next.type].label}</Text>
+                {next.opponent?.trim() ? <Text style={font.body}>vs {next.opponent.trim()}</Text> : next.name ? <Text style={font.body}>{next.name}</Text> : null}
+                <Text style={font.small}>
+                  {shortDate(localDate(new Date(next.starts_at), team.timezone), false)} • {clock(localTime(new Date(next.starts_at), team.timezone))}
+                </Text>
+                {next.location ? <Text style={font.small}>{next.location}</Text> : null}
+              </View>
+            </View>
+            <Button label="View Event" size="sm" onPress={() => router.push({ pathname: '/event/[id]', params: { id: next.id } })} />
+          </>
         ) : (
           <Text style={font.small}>Nothing scheduled.</Text>
         )}
       </Card>
 
-      <Segmented
-        options={[
-          { value: 'roster', label: 'Roster' },
-          { value: 'games', label: 'Games' },
-          { value: 'events', label: 'Events' },
-          { value: 'info', label: 'Info' },
-        ]}
-        value={tab}
-        onChange={setTab}
-      />
-
-      {tab === 'roster' && (
-        <>
-          {manager && (
-            <Button label={copied ? 'Join Link Copied' : 'Invite Players'} icon={copied ? 'checkmark' : 'person-add-outline'} onPress={() => void shareLink()} />
-          )}
-          {manager && pendingCount > 0 && (
-            <Button
-              label={`${pendingCount} join ${pendingCount === 1 ? 'request' : 'requests'} to review`}
-              icon="person-add-outline"
-              variant="secondary"
-              onPress={() => router.push({ pathname: '/settings/[teamId]/[section]', params: { teamId: team.id, section: 'members' } })}
-            />
-          )}
-          {manager ? <ManagerRoster members={members} detail={data?.detail} /> : <PlayerRoster members={members} />}
-        </>
-      )}
-
-      {(tab === 'games' || tab === 'events') && (
-        <>
-          {manager && (
-            <Button label="New Event" icon="add" variant="secondary" onPress={() => router.push({ pathname: '/event/new', params: { teamId: team.id } })} />
-          )}
-          <Card style={{ paddingVertical: 0 }}>
-            {(() => {
-              const list = events.filter((e) => (tab === 'games' ? e.type === 'GAME' : e.type !== 'GAME'));
-              return list.length ? (
-                list.map((e, i) => <EventRow key={e.id} first={i === 0} event={e} timezone={team.timezone} onPress={() => openEvent(e.id)} />)
-              ) : (
-                <Text style={[font.small, { paddingVertical: space.lg }]}>{tab === 'games' ? 'No upcoming Games.' : 'No upcoming Events.'}</Text>
-              );
-            })()}
-          </Card>
-        </>
-      )}
-
-      {tab === 'info' && (
-        <>
-          <Card style={{ paddingVertical: 0 }}>
-            <ListRow first title="Team" subtitle={team.name} />
-            <ListRow title="Arena" subtitle={team.arena ?? 'Not set'} />
-            <ListRow title="Default location" subtitle={team.default_location ?? team.arena ?? 'Not set'} />
-            <ListRow title="Time zone" subtitle={team.timezone} />
-            <ListRow
-              title="Managers"
-              subtitle={
-                members
-                  .filter((m) => m.manager_role)
-                  .map((m) => `${m.display_name}${m.manager_role === 'ASSISTANT_MANAGER' ? ' (Assistant)' : ''}`)
-                  .join(', ') || '—'
-              }
-            />
-          </Card>
-          {manager && (
-            <Card>
-              <Text style={font.heading}>Invite players</Text>
-              <Text style={font.small}>Share this join link. Every request needs a Manager's approval.</Text>
-              <Text selectable style={[font.body, { color: accent.ink }]}>
-                {joinLink(team.join_code)}
-              </Text>
-              <Button label={copied ? 'Link Copied' : 'Share Join Link'} icon={copied ? 'checkmark' : 'share-outline'} onPress={() => void shareLink()} />
-            </Card>
-          )}
-          {manager && (
-            <Button label="Team Settings" icon="settings-outline" variant="secondary" onPress={() => router.push({ pathname: '/settings/[teamId]', params: { teamId: team.id } })} />
-          )}
-          <Button label="Leave Team" variant="danger" busy={leave.busy} onPress={() => void onLeave()} />
-          <ErrorText error={leave.error} />
-        </>
-      )}
-      {confirm.element}
+      <Card flush>
+        <ListRow first icon="calendar-outline" title="Events" subtitle="Full schedule" onPress={() => go('/team/events')} />
+        <ListRow icon="clipboard-outline" title="Default Roster" subtitle={`${count('ROSTER')} players`} onPress={() => go('/team/roster')} />
+        <ListRow icon="swap-horizontal-outline" title="Callups" subtitle={`${count('CALLUP')} on the callup list`} onPress={() => people('callups')} />
+        <ListRow icon="people-outline" title="Players" subtitle={`${members.length} members`} onPress={() => people('players')} />
+        <ListRow icon="shield-checkmark-outline" title="Managers" subtitle={`${managers} ${managers === 1 ? 'manager' : 'managers'}`} onPress={() => people('managers')} />
+        {manager && (
+          <ListRow
+            icon="mail-unread-outline"
+            title="Invitations"
+            subtitle="Join requests and the invite link"
+            right={joinRequests ? <CountBubble count={joinRequests} /> : undefined}
+            onPress={() => router.push({ pathname: '/settings/[teamId]/[section]', params: { teamId: team.id, section: 'members' } })}
+          />
+        )}
+        {manager && (
+          <ListRow icon="settings-outline" title="Team Settings" onPress={() => router.push({ pathname: '/settings/[teamId]', params: { teamId: team.id } })} />
+        )}
+        <ListRow icon="information-circle-outline" title="Team Information" onPress={() => go('/team/info')} />
+      </Card>
     </Screen>
   );
 }
 
-/** Players see names only: the roster and callups, alphabetical, with no Positions or ranking (spec §44, §45). */
-function PlayerRoster({ members }: { members: TeamMember[] }) {
-  const roster = members.filter((m) => m.roster_role === 'ROSTER');
-  const callups = members.filter((m) => m.roster_role === 'CALLUP');
-  return (
-    <>
-      <Card style={{ paddingVertical: 0 }}>
-        {roster.length ? roster.map((m, i) => <ListRow key={m.id} first={i === 0} title={m.display_name} leading={<Avatar name={m.display_name} path={m.avatar_path} />} />) : <Text style={[font.small, { paddingVertical: space.lg }]}>No players yet.</Text>}
-      </Card>
-      {callups.length > 0 && (
-        <>
-          <SectionLabel>Callups</SectionLabel>
-          <Card style={{ paddingVertical: 0 }}>
-            {callups.map((m, i) => (
-              <ListRow key={m.id} first={i === 0} title={m.display_name} leading={<Avatar name={m.display_name} path={m.avatar_path} />} />
-            ))}
-          </Card>
-        </>
-      )}
-    </>
-  );
-}
-
-/** Managers see official Positions (spec §44). Players on the default roster first, then callups. */
-function ManagerRoster({ members, detail }: { members: TeamMember[]; detail: Awaited<ReturnType<typeof loadTeamDetail>> | undefined }) {
-  if (!detail) return null;
-  const positions = detail.positions.filter((p) => p.kind !== 'GOALIE' || detail.config.goalieEnabled);
-  const byPosition = (list: TeamMember[]) => {
-    const groups = positions.map((p) => ({ key: p.id, name: p.name, people: list.filter((m) => m.position_id === p.id) }));
-    groups.push({ key: 'none', name: 'No Position', people: list.filter((m) => !m.position_id || !positions.some((p) => p.id === m.position_id)) });
-    return groups.filter((g) => g.people.length);
-  };
-  const sections: { title: string; list: TeamMember[] }[] = [
-    { title: 'Roster', list: members.filter((m) => m.roster_role === 'ROSTER') },
-    { title: 'Callups', list: members.filter((m) => m.roster_role === 'CALLUP') },
-    { title: 'Not playing', list: members.filter((m) => m.roster_role === 'NONE') },
-  ];
-  return (
-    <>
-      {sections
-        .filter((s) => s.list.length)
-        .map((s) => (
-          <View key={s.title} style={{ gap: space.md }}>
-            <SectionLabel>{`${s.title} (${s.list.length})`}</SectionLabel>
-            {byPosition(s.list).map((g) => (
-              <Card key={g.key} style={{ paddingVertical: space.sm, gap: 0 }}>
-                <Text style={[font.body, { fontWeight: '600', paddingTop: space.xs }]}>{g.name}</Text>
-                {g.people.map((m) => (
-                  <ListRow
-                    key={m.id}
-                    title={m.display_name}
-                    leading={<Avatar name={m.display_name} path={m.avatar_path} />}
-                    right={m.manager_role ? <Badge label={m.manager_role === 'MANAGER' ? 'Manager' : 'Assistant'} tone="primary" /> : undefined} />
-                ))}
-              </Card>
-            ))}
-          </View>
-        ))}
-      {!members.length && <Text style={font.small}>No members yet.</Text>}
-    </>
-  );
-}
+const styles = StyleSheet.create({
+  teamHead: { flexDirection: 'row', alignItems: 'center', gap: space.md },
+  next: { flexDirection: 'row', gap: space.md, alignItems: 'flex-start' },
+});

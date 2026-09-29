@@ -3,7 +3,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useRef, useState } from 'react';
 import { PanResponder, Platform, Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import { useAccent } from './accent';
-import { Button, ButtonRow, Segmented, Sheet } from './components';
+import { Button, ButtonRow, FieldLabel, Segmented, Sheet } from './components';
 import { clock } from './format';
 import { colors, font, radius, space } from './theme';
 
@@ -18,11 +18,23 @@ type Mode = 'hour' | 'minute';
 const pad = (n: number) => String(n).padStart(2, '0');
 
 /** A time field that opens a clock. Reports HH:MM (24-hour), like the rest of the app. */
-export function TimeField({ label, value, onChange, hint }: { label: string; value: string | null; onChange: (time: string | null) => void; hint?: string }) {
+export function TimeField({
+  label,
+  value,
+  onChange,
+  hint,
+  required,
+}: {
+  label: string;
+  value: string | null;
+  onChange: (time: string | null) => void;
+  hint?: string;
+  required?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <View style={styles.field}>
-      <Text style={styles.label}>{label}</Text>
+      <FieldLabel label={label} required={required} />
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${label}: ${value ? clock(value) : 'not set'}`}
@@ -145,8 +157,7 @@ function ClockSheet({ title, initial, onClose, onSet }: { title: string; initial
 }
 
 const styles = StyleSheet.create({
-  field: { gap: space.xs },
-  label: { fontSize: 14, fontWeight: '600', color: colors.text },
+  field: { gap: 6 },
   input: {
     minHeight: 46,
     borderWidth: 1,
