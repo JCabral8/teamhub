@@ -11,6 +11,7 @@ import type { EventDetail } from '../../../lib/data';
 import { Avatar } from '../../../ui/Avatar';
 import { Button, Card, Empty, ErrorText, ListRow, Loading, Notice, Screen, SectionLabel } from '../../../ui/components';
 import { StandingPill } from '../../../ui/EventTypeIcon';
+import { matchTitle } from '../../../ui/format';
 import { font, space } from '../../../ui/theme';
 import { TeamAccent } from '../../../ui/TeamAccent';
 
@@ -26,7 +27,15 @@ export default function EventScreen() {
   const detail = data?.detail;
   const mine = detail?.roster.find((r) => r.userId === userId);
   const released = detail?.event.release_state === 'RELEASED';
-  const player = usePlayerAttendance({ eventId: id, entry: mine, released, isManager: manager, onChanged: () => void reload() });
+  const player = usePlayerAttendance({
+    eventId: id,
+    eventTitle: detail && membership ? matchTitle(detail.event, membership.team.name) : '',
+    entry: mine,
+    callup: data?.myCallup,
+    released,
+    isManager: manager,
+    onChanged: () => void reload(),
+  });
 
   if (teamsLoading || (loading && !data)) return <Loading />;
   if (!data || !detail) return <Empty title="Event not found" body={error ?? 'It may have been deleted.'} />;
@@ -42,6 +51,7 @@ export default function EventScreen() {
       <Screen onRefresh={reload} footer={player.footer}>
         <Stack.Screen
           options={{
+            title: player.title ?? 'Event Details',
             headerRight: manager
               ? () => <Button label="Edit" variant="secondary" size="sm" onPress={() => router.push({ pathname: '/event/edit', params: { id: event.id } })} style={{ marginRight: space.md }} />
               : undefined,
@@ -50,9 +60,11 @@ export default function EventScreen() {
         <ErrorText error={error} />
         <EventHeader event={event} team={team} showTeamName={multiTeam} />
 
-        {manager && data.team && hasCustomRequirements(detail, data.team) && (
+        {manager && data.team && hasCustomRequirements(detail, data.team, membership) && (
           <Notice tone="attention" title="Custom Roster for This Event" icon="options">
-            <Text style={font.small}>This Event uses its own Position requirements. The Team defaults are unchanged.</Text>
+            <Text style={font.small}>
+              {`This Event uses its own Position requirements${event.callup_spots ? ` with ${event.callup_spots} callup ${event.callup_spots === 1 ? 'spot' : 'spots'}` : ''}. The Team defaults are unchanged.`}
+            </Text>
             <Button label="Edit Roster Settings" variant="secondary" size="sm" onPress={() => go('/event/[id]/roster-settings')} style={{ alignSelf: 'flex-start' }} />
           </Notice>
         )}
@@ -109,10 +121,11 @@ function ManagerSections({
     <>
       <SectionLabel>Attendance</SectionLabel>
       <SendAttendance event={event} team={team} onChanged={onChanged} />
-      {released && <AttendanceSummary status={status} released={released} />}
+      {released && <AttendanceSummary status={status} released={released} callupSpots={event.callup_spots} />}
       {released && pending > 0 && (
-        <Notice tone="attention" title="Waiting for a Spot" icon="time">
-          {`${pending} ${pending === 1 ? 'player said' : 'players said'} Yes after the roster filled. The earliest request gets the next open spot automatically.`}
+        <Notice tone="attention" title="Pending Approval" icon="time">
+          <Text style={font.small}>{`${pending} ${pending === 1 ? 'player said' : 'players said'} Yes after the roster filled. Approve or decline them.`}</Text>
+          <Button label="Review Pending Players" variant="secondary" size="sm" onPress={openRow('PENDING_APPROVAL')} style={{ alignSelf: 'flex-start' }} />
         </Notice>
       )}
       <Card flush>
@@ -120,6 +133,7 @@ function ManagerSections({
           <>
             <ListRow first strong title={`Attending (${count('ATTENDING')})`} onPress={openRow('ATTENDING')} />
             <ListRow strong title={`Not Attending (${count('NOT_ATTENDING')})`} onPress={openRow('NOT_ATTENDING')} />
+            <ListRow strong title={`Maybe (${count('MAYBE')})`} onPress={openRow('MAYBE')} />
             <ListRow strong title={`No Response (${count('NO_RESPONSE')})`} onPress={openRow('NO_RESPONSE')} />
             <ListRow strong title={`Pending Approval (${pending})`} highlighted={pending > 0} onPress={openRow('PENDING_APPROVAL')} />
           </>
@@ -153,7 +167,8 @@ function PlayerLists({ detail, released }: { detail: EventDetail; released: bool
   }
   const groups: { standing: RosterStanding; title: string }[] = [
     { standing: 'ATTENDING', title: 'Attending' },
-    { standing: 'PENDING_APPROVAL', title: 'Waiting for a Spot' },
+    { standing: 'PENDING_APPROVAL', title: 'Pending Approval' },
+    { standing: 'MAYBE', title: 'Maybe' },
     { standing: 'NOT_ATTENDING', title: 'Not Attending' },
     { standing: 'NO_RESPONSE', title: 'No Response' },
   ];
@@ -173,7 +188,7 @@ function PlayerLists({ detail, released }: { detail: EventDetail; released: bool
                   title={e.displayName}
                   subtitle={e.response === 'NO' ? e.reason : null}
                   leading={<Avatar name={e.displayName} path={detail.avatars[e.userId]} size={30} />}
-                  right={g.standing === 'PENDING_APPROVAL' ? <StandingPill standing={g.standing} short /> : undefined}
+                  right={g.standing === 'PENDING_APPROVAL' || g.standing === 'MAYBE' ? <StandingPill standing={g.standing} short /> : undefined}
                 />
               ))}
             </Card>

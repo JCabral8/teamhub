@@ -2,7 +2,7 @@ import { Stack, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Text } from 'react-native';
 import { useAuth } from '../../lib/auth';
-import { loadEvents, loadMyRosterLines, type MyRosterLine, type TeamEvent } from '../../lib/data';
+import { loadEvents, loadMyCallups, loadMyRosterLines, type MyCallup, type MyRosterLine, type TeamEvent } from '../../lib/data';
 import { useLoader, useRealtime } from '../../lib/hooks';
 import { isManagerOf, useTeams } from '../../lib/teams';
 import { Button, Card, Empty, ErrorText, Loading, Screen, TabBar } from '../../ui/components';
@@ -18,9 +18,10 @@ export default function TeamEvents() {
   const team = membership?.team;
   const [when, setWhen] = useState<'upcoming' | 'past'>('upcoming');
   const { data, error, loading, reload } = useLoader(async () => {
-    if (!team || !userId) return { events: [] as TeamEvent[], lines: new Map<string, MyRosterLine>() };
+    if (!team || !userId) return { events: [] as TeamEvent[], lines: new Map<string, MyRosterLine>(), callups: new Map<string, MyCallup>() };
     const events = await loadEvents([team.id], { from: new Date(Date.now() - 365 * 86_400_000) });
-    return { events, lines: await loadMyRosterLines(userId, events.map((e) => e.id)) };
+    const [lines, callups] = await Promise.all([loadMyRosterLines(userId, events.map((e) => e.id)), loadMyCallups()]);
+    return { events, lines, callups };
   }, [team?.id, userId]);
   useRealtime(`team-events-${team?.id}`, team ? [{ table: 'events', filter: `team_id=eq.${team.id}` }] : [], () => void reload());
 
@@ -60,6 +61,7 @@ export default function TeamEvents() {
               timezone={team.timezone}
               teamName={team.name}
               myLine={data?.lines.get(e.id)}
+              myCallup={data?.callups.get(e.id)}
               onPress={() => router.push({ pathname: '/event/[id]', params: { id: e.id } })}
             />
           ))

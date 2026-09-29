@@ -1,9 +1,10 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { localDate, localTime, standingOf } from '../domain/index.ts';
-import type { MyRosterLine, TeamEvent } from '../lib/data';
+import { localDate, standingOf } from '../domain/index.ts';
+import type { MyCallup, MyRosterLine, TeamEvent } from '../lib/data';
 import { paletteFor, useAccent } from './accent';
+import { Badge } from './components';
 import { EventTypeIcon, StandingPill } from './EventTypeIcon';
-import { clock, dateColumn, matchTitle } from './format';
+import { dateColumn, matchTitle, timeRange } from './format';
 import { colors, font, space } from './theme';
 
 /**
@@ -17,6 +18,7 @@ export function EventRow({
   showTeam,
   accentColor,
   myLine,
+  myCallup,
   onPress,
   first,
   hideDate,
@@ -31,6 +33,8 @@ export function EventRow({
   /** The Event's Team colour, for lists that mix Teams. Otherwise the surrounding accent. */
   accentColor?: string | null;
   myLine?: MyRosterLine;
+  /** The person's own callup invitation for this Event, if any (wireframe 7F). */
+  myCallup?: MyCallup;
   onPress: () => void;
   first?: boolean;
   /** Leave the date column out, when the list is already one day. */
@@ -62,16 +66,17 @@ export function EventRow({
           {matchTitle(event, teamName)}
         </Text>
         <Text style={font.small} numberOfLines={1}>
-          {clock(localTime(at, timezone))}
+          {timeRange(event, timezone)}
         </Text>
         {where ? (
           <Text style={font.small} numberOfLines={1}>
             {where}
           </Text>
         ) : null}
-        {standing && (
-          <View style={{ flexDirection: 'row', marginTop: 2 }}>
-            <StandingPill standing={standing} released={released} />
+        {(standing || myCallup) && (
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 2 }}>
+            {myCallup && !myCallup.closed && standing ? <Badge label="Callup" tone="primary" icon="trophy" /> : null}
+            {standing ? <StandingPill standing={standing} released={released} /> : myCallup?.closed ? <Badge label="No Longer Needed" tone="neutral" icon="checkmark-done" /> : null}
           </View>
         )}
       </View>

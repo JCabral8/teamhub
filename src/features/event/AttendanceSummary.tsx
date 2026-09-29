@@ -6,10 +6,10 @@ import type { RosterStatus } from '../../domain/index.ts';
 import { Badge, Card, ProgressBar } from '../../ui/components';
 import { colors, font, space } from '../../ui/theme';
 
-export function AttendanceSummary({ status, released }: { status: RosterStatus; released: boolean }) {
+export function AttendanceSummary({ status, released, callupSpots = 0 }: { status: RosterStatus; released: boolean; callupSpots?: number }) {
   const { counts, coverage, openSpots } = status;
   const attending = counts.goalies + counts.players;
-  const capacity = openSpots === null ? null : coverage.reduce((s, c) => s + c.required, 0) || attending + openSpots;
+  const capacity = openSpots === null ? null : coverage.reduce((s, c) => s + c.required, 0) + callupSpots;
   const below = capacity !== null ? Math.max(0, capacity - attending) : 0;
 
   return (
@@ -28,6 +28,7 @@ export function AttendanceSummary({ status, released }: { status: RosterStatus; 
         )}
       </View>
       {capacity !== null && <ProgressBar value={attending} max={capacity} tone={below === 0 ? 'positive' : released ? 'negative' : 'neutral'} />}
+      {callupSpots > 0 && <Text style={font.small}>{`Includes ${callupSpots} callup ${callupSpots === 1 ? 'spot' : 'spots'}.`}</Text>}
       {coverage.length > 0 && (
         <View style={{ gap: space.xs }}>
           <Text style={[font.body, { fontWeight: '700' }]}>Coverage</Text>

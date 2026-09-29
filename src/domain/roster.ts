@@ -143,6 +143,7 @@ export function assignToSlots(candidates: SlotCandidate[], slots: Slot[]): SlotA
 export function standingOf(entry: Pick<EventRosterEntry, 'response' | 'pendingSince'>): RosterStanding {
   if (entry.response === 'YES') return entry.pendingSince ? 'PENDING_APPROVAL' : 'ATTENDING';
   if (entry.response === 'NO') return 'NOT_ATTENDING';
+  if (entry.response === 'MAYBE') return 'MAYBE';
   return 'NO_RESPONSE';
 }
 
@@ -170,20 +171,42 @@ export interface RosterContext {
   mode: CallupMode;
   /** Internal callup targets (userId → Position id or null for any skater). Manager-only data. */
   callupTargets?: ReadonlyMap<string, string | null>;
+  /**
+   * Extra roster spots only callups can take, on top of the Position requirements (wireframe 2,
+   * "Number of callup spots"). A callup who fits no Position slot takes one of these.
+   */
+  callupSpots?: number;
+}
+
+/** Slot key for the Event's callup spots. */
+export const CALLUP_SLOT = 'CALLUP_SPOTS';
+
+/** The Position slots plus, when the Event has any, one slot for its callup spots. */
+export function slotsWithCallupSpots(model: SlotModel, ctx: RosterContext): Slot[] {
+  const spots = ctx.callupSpots ?? 0;
+  return spots > 0 ? [...model.slots, { key: CALLUP_SLOT, positionId: null, capacity: spots, isGoalie: false }] : model.slots;
+}
+
+/**
+ * An entry as a matching candidate. Callups may take a callup spot first, then any Position slot they
+ * fit, so a callup never keeps a default-roster player out of a Position slot while a callup spot is free.
+ */
+export function rosterCandidate(e: EventRosterEntry, model: SlotModel, ctx: RosterContext): SlotCandidate {
+  const natural = entrySlots(e, model, ctx.config, ctx.mode, ctx.callupTargets);
+  return { id: e.userId, eligible: e.source === 'CALLUP' && (ctx.callupSpots ?? 0) > 0 ? [CALLUP_SLOT, ...natural] : natural };
+}
+
+/** How many roster spots these entries occupy: Position slots plus callup spots, in the best arrangement. */
+export function occupiedSpots(entries: EventRosterEntry[], model: SlotModel, ctx: RosterContext): number {
+  return assignToSlots(entries.map((e) => rosterCandidate(e, model, ctx)), slotsWithCallupSpots(model, ctx)).assignment.size;
 }
 
 /** Whether a player can join the attending roster without displacing anyone (spec §37). */
 export function hasRosterSpaceFor(roster: EventRosterEntry[], candidate: EventRosterEntry, ctx: RosterContext): boolean {
   const model = buildSlotModel(ctx.requirements, ctx.config, ctx.mode);
   if (model.unlimited) return true;
-  const toCandidate = (e: EventRosterEntry) => ({
-    id: e.userId,
-    eligible: entrySlots(e, model, ctx.config, ctx.mode, ctx.callupTargets),
-  });
-  const attending = roster.filter((e) => isAttending(e) && e.userId !== candidate.userId).map(toCandidate);
-  const before = assignToSlots(attending, model.slots).assignment.size;
-  const after = assignToSlots([...attending, toCandidate(candidate)], model.slots).assignment.size;
-  return after > before;
+  const attending = roster.filter((e) => isAttending(e) && e.userId !== candidate.userId);
+  return occupiedSpots([...attending, candidate], model, ctx) > occupiedSpots(attending, model, ctx);
 }
 
 export interface PositionCoverage {
@@ -244,12 +267,13 @@ export interface AttendanceCounts {
   /** Attending non-Goalie players. */
   players: number;
   pendingApproval: number;
+  maybe: number;
   notAttending: number;
   noResponse: number;
 }
 
 export function calculateAttendanceCounts(roster: EventRosterEntry[], config: PositionConfig): AttendanceCounts {
-  const counts: AttendanceCounts = { goalies: 0, players: 0, pendingApproval: 0, notAttending: 0, noResponse: 0 };
+  const counts: AttendanceCounts = { goalies: 0, players: 0, pendingApproval: 0, maybe: 0, notAttending: 0, noResponse: 0 };
   for (const e of roster) {
     switch (standingOf(e)) {
       case 'ATTENDING':
@@ -258,6 +282,9 @@ export function calculateAttendanceCounts(roster: EventRosterEntry[], config: Po
         break;
       case 'PENDING_APPROVAL':
         counts.pendingApproval++;
+        break;
+      case 'MAYBE':
+        counts.maybe++;
         break;
       case 'NOT_ATTENDING':
         counts.notAttending++;
@@ -298,8 +325,9 @@ export interface RosterGroup {
 const STANDING_ORDER: Record<RosterStanding, number> = {
   ATTENDING: 0,
   PENDING_APPROVAL: 1,
-  NO_RESPONSE: 2,
-  NOT_ATTENDING: 3,
+  MAYBE: 2,
+  NO_RESPONSE: 3,
+  NOT_ATTENDING: 4,
 };
 
 const byName = (a: EventRosterEntry, b: EventRosterEntry) =>
@@ -360,11 +388,8 @@ export function calculateRosterStatus(roster: EventRosterEntry[], ctx: RosterCon
   const model = buildSlotModel(ctx.requirements, ctx.config, ctx.mode);
   let openSpots: number | null = null;
   if (!model.unlimited) {
-    const attending = roster
-      .filter(isAttending)
-      .map((e) => ({ id: e.userId, eligible: entrySlots(e, model, ctx.config, ctx.mode, ctx.callupTargets) }));
-    const filled = assignToSlots(attending, model.slots).assignment.size;
-    openSpots = model.slots.reduce((s, x) => s + x.capacity, 0) - filled;
+    const capacity = model.slots.reduce((s, x) => s + x.capacity, 0) + (ctx.callupSpots ?? 0);
+    openSpots = capacity - occupiedSpots(roster.filter(isAttending), model, ctx);
   }
   return {
     counts,

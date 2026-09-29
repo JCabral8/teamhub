@@ -1,10 +1,9 @@
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Text, View } from 'react-native';
 import { groupRosterByPosition, standingOf, type EventRosterEntry, type RosterStanding } from '../../../domain/index.ts';
-import { AddPlayerSheet, PlayerActionsSheet } from '../../../features/event/RosterSheets';
-import { rosterStatus, spotsForCallups, useEventData } from '../../../features/event/useEventData';
-import { useInviteCallups } from '../../../features/event/useInviteCallups';
+import { AddPlayerSheet } from '../../../features/event/RosterSheets';
+import { spotsForCallups, useEventData } from '../../../features/event/useEventData';
 import { Avatar } from '../../../ui/Avatar';
 import { Button, Card, Chips, Empty, ErrorText, ListRow, Loading, Notice, Screen, TabBar } from '../../../ui/components';
 import { StandingPill } from '../../../ui/EventTypeIcon';
@@ -14,7 +13,7 @@ import { TeamAccent } from '../../../ui/TeamAccent';
 
 type Tab = 'roster' | 'callups' | 'pending';
 type Filter = 'ALL' | RosterStanding;
-const STANDINGS: RosterStanding[] = ['ATTENDING', 'NOT_ATTENDING', 'NO_RESPONSE', 'PENDING_APPROVAL'];
+const STANDINGS: RosterStanding[] = ['ATTENDING', 'NOT_ATTENDING', 'MAYBE', 'NO_RESPONSE', 'PENDING_APPROVAL'];
 
 /**
  * Wireframes 8B "Roster View", 8C "Open Spots" and 4C "Pending List": everyone on the Event by
@@ -26,9 +25,8 @@ export default function EventRoster() {
   const initialFilter: Filter = STANDINGS.includes(status as RosterStanding) ? (status as RosterStanding) : 'ALL';
   const [tab, setTab] = useState<Tab>(initialFilter === 'PENDING_APPROVAL' ? 'pending' : 'roster');
   const [filter, setFilter] = useState<Filter>(initialFilter === 'PENDING_APPROVAL' ? 'ALL' : initialFilter);
-  const [selected, setSelected] = useState<EventRosterEntry | null>(null);
+  const router = useRouter();
   const [adding, setAdding] = useState(false);
-  const callups = useInviteCallups(id, () => void reload());
 
   if (teamsLoading || (loading && !data)) return <Loading />;
   if (!data || !membership) return <Empty title="Event not found" body={error ?? undefined} />;
@@ -36,7 +34,7 @@ export default function EventRoster() {
 
   const { detail, team } = data;
   const released = detail.event.release_state === 'RELEASED';
-  const openSpots = spotsForCallups(rosterStatus(detail, team, membership));
+  const openSpots = spotsForCallups(detail, team, membership);
   const positionName = new Map(team.positions.map((p) => [p.id, p.name]));
   const pending = detail.roster.filter((e) => standingOf(e) === 'PENDING_APPROVAL').sort((a, b) => (a.pendingSince ?? '').localeCompare(b.pendingSince ?? ''));
   const callupEntries = detail.roster.filter((e) => e.source === 'CALLUP');
@@ -51,7 +49,7 @@ export default function EventRoster() {
       subtitle={subtitle ?? (e.response === 'NO' ? e.reason : e.responseOrigin === 'SYSTEM_AVAILABILITY' ? 'Marked unavailable' : null)}
       leading={<Avatar name={e.displayName} path={detail.avatars[e.userId]} size={32} />}
       right={<StandingPill standing={standingOf(e)} released={released} short />}
-      onPress={() => setSelected(e)}
+      onPress={() => router.push({ pathname: '/event/[id]/player/[userId]', params: { id, userId: e.userId } })}
     />
   );
 
@@ -72,16 +70,14 @@ export default function EventRoster() {
         {released && openSpots > 0 && tab !== 'pending' && (
           <Notice tone="negative" icon="people" title={`${openSpots} roster ${openSpots === 1 ? 'spot' : 'spots'} open`}>
             <Text style={font.small}>Invite callups to fill the open spots.</Text>
-            <Button label="Invite Callups" size="sm" busy={callups.busy} onPress={() => void callups.invite()} />
+            <Button label="Invite Callups" size="sm" onPress={() => router.push({ pathname: '/event/[id]/invite-callups', params: { id } })} />
           </Notice>
         )}
-        {callups.result && <Notice tone="positive">{callups.result}</Notice>}
-        <ErrorText error={callups.error} />
 
         {tab === 'pending' ? (
           <>
             <Notice tone="attention" icon="time">
-              These players said Yes after the roster filled. They're listed in the order they asked, and the first one takes the next spot that opens.
+              These players said Yes after the roster filled, listed in the order they asked. Tap a player to approve or decline them.
             </Notice>
             <Card flush>{pending.map((e, i) => row(e, i, `#${i + 1} in line${e.positionId ? ` · ${positionName.get(e.positionId) ?? ''}` : ''}`))}</Card>
           </>
@@ -107,7 +103,6 @@ export default function EventRoster() {
           </>
         )}
 
-        <PlayerActionsSheet entry={selected} detail={detail} positionName={positionName} onClose={() => setSelected(null)} onChanged={() => void reload()} />
         <AddPlayerSheet visible={adding} onClose={() => setAdding(false)} detail={detail} team={team} onAdded={() => void reload()} />
       </Screen>
     </TeamAccent>

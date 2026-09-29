@@ -16,15 +16,15 @@ export interface EventAttendanceState extends RosterContext {
 export type AttendanceNotice =
   | { kind: 'PENDING_APPROVAL'; userId: string }
   | { kind: 'ROSTER_DISCREPANCY'; userId: string }
-  | { kind: 'ROSTER_SPOT_CONFIRMED'; userId: string }
   | { kind: 'CALLUP_ACCEPTED'; userId: string }
-  | { kind: 'CALLUP_DECLINED'; userId: string };
+  | { kind: 'CALLUP_DECLINED'; userId: string }
+  | { kind: 'CALLUP_CONFIRMED'; userId: string };
 
 export interface AttendanceChangeResult {
   /** Entries whose state changed, in their new form. */
   updates: EventRosterEntry[];
   notices: AttendanceNotice[];
-  /** True when a spot may have opened, so callup selection should run. */
+  /** True when an attending player stopped attending, so a spot opened. */
   spotOpened: boolean;
 }
 
@@ -54,34 +54,10 @@ function diff(before: EventRosterEntry[], after: EventRosterEntry[]): EventRoste
 }
 
 /**
- * Promotes Pending Approval players first-come-first-served while spots exist (spec §37).
- * A later pending player may be promoted ahead of an earlier one only when the earlier one does not
- * fit any open spot (the "earliest eligible" rule). Mutates and returns the promoted user ids.
- */
-export function processPendingRoster(roster: EventRosterEntry[], ctx: RosterContext): string[] {
-  const promoted: string[] = [];
-  let changed = true;
-  while (changed) {
-    changed = false;
-    const pending = roster
-      .filter((e) => standingOf(e) === 'PENDING_APPROVAL')
-      .sort((a, b) => a.pendingSince!.localeCompare(b.pendingSince!) || a.userId.localeCompare(b.userId));
-    for (const entry of pending) {
-      if (hasRosterSpaceFor(roster, entry, ctx)) {
-        entry.pendingSince = null;
-        promoted.push(entry.userId);
-        changed = true;
-        break;
-      }
-    }
-  }
-  return promoted;
-}
-
-/**
- * Applies a YES/NO answer (spec §37, §48). Default-roster players who say YES without a free spot go
- * to PENDING APPROVAL and managers are told about the discrepancy. Callups never go pending: a callup
- * YES either fills a spot or is refused.
+ * Applies a YES, NO or MAYBE answer (spec §37, §48; wireframes 4, 6, 7). Default-roster players who
+ * say YES without a free spot go to PENDING APPROVAL and Managers are told; a Manager then approves or
+ * declines them (wireframe 4). Nobody is promoted automatically. Callups never go pending: a callup
+ * YES either fills a spot or is refused. MAYBE holds no spot.
  */
 export function processAttendanceChange(
   state: EventAttendanceState,
@@ -103,12 +79,12 @@ export function processAttendanceChange(
   const previous = entry.response;
   const notices: AttendanceNotice[] = [];
 
-  if (answer === 'NO') {
-    entry.response = 'NO';
+  if (answer === 'NO' || answer === 'MAYBE') {
+    entry.response = answer;
     entry.pendingSince = null;
     entry.reason = reason;
     entry.responseOrigin = origin;
-    if (entry.source === 'CALLUP' && previous === 'NO_RESPONSE') {
+    if (answer === 'NO' && entry.source === 'CALLUP' && previous !== 'NO') {
       notices.push({ kind: 'CALLUP_DECLINED', userId });
     }
   } else if (previous !== 'YES') {
@@ -117,7 +93,7 @@ export function processAttendanceChange(
     if (hasRosterSpaceFor(roster, entry, state)) {
       entry.response = 'YES';
       entry.pendingSince = null;
-      if (entry.source === 'CALLUP') notices.push({ kind: 'CALLUP_ACCEPTED', userId });
+      if (entry.source === 'CALLUP') notices.push({ kind: 'CALLUP_ACCEPTED', userId }, { kind: 'CALLUP_CONFIRMED', userId });
     } else if (entry.source === 'CALLUP') {
       throw new DomainError('CALLUP_SPOT_FILLED', 'This spot has already been filled.');
     } else {
@@ -127,14 +103,40 @@ export function processAttendanceChange(
     }
   }
 
-  const promoted = wasAttending && !isAttending(entry) ? processPendingRoster(roster, state) : [];
-  for (const id of promoted) notices.push({ kind: 'ROSTER_SPOT_CONFIRMED', userId: id });
-
   return {
     updates: diff(state.roster, roster),
     notices,
-    spotOpened: wasAttending && !isAttending(entry) && promoted.length === 0,
+    spotOpened: wasAttending && !isAttending(entry),
   };
+}
+
+/** Whether a YES from this player would have to wait for approval right now (wireframe 4A). */
+export function wouldBePending(state: EventAttendanceState, userId: string): boolean {
+  const entry = state.roster.find((e) => e.userId === userId);
+  if (!entry || entry.source === 'CALLUP' || isAttending(entry)) return false;
+  return !hasRosterSpaceFor(state.roster, { ...entry, response: 'YES', pendingSince: null }, state);
+}
+
+/**
+ * A Manager decides on a Pending Approval player (wireframe 4D). Approving adds them to the attending
+ * roster even if that takes it past the requirements, since the Manager chose to; declining records
+ * NO as the Manager's decision ("Not Selected").
+ */
+export function decidePending(state: EventAttendanceState, userId: string, approve: boolean): EventRosterEntry {
+  const entry = state.roster.find((e) => e.userId === userId);
+  if (!entry || standingOf(entry) !== 'PENDING_APPROVAL') {
+    throw new DomainError('NOT_PENDING', 'This player is not waiting for approval.');
+  }
+  return approve
+    ? { ...entry, pendingSince: null }
+    : { ...entry, response: 'NO', pendingSince: null, reason: null, responseOrigin: 'MANAGER' };
+}
+
+/** A Manager sets a callup's status by hand (wireframe 3E): Pending, Accepted or Declined. */
+export function setCallupStatus(state: EventAttendanceState, userId: string, response: 'YES' | 'NO' | 'NO_RESPONSE'): EventRosterEntry {
+  const entry = state.roster.find((e) => e.userId === userId);
+  if (!entry || entry.source !== 'CALLUP') throw new DomainError('NOT_A_CALLUP', 'This player is not a callup on this Event.');
+  return { ...entry, response, pendingSince: null, reason: null, responseOrigin: response === 'NO_RESPONSE' ? null : 'MANAGER' };
 }
 
 export interface ReleaseResult {

@@ -138,7 +138,7 @@ export async function addMember(h: Harness, world: TeamWorld, name: string, posi
 export async function createGame(
   h: Harness,
   world: TeamWorld,
-  opts: { date?: string; time?: string; opponent?: string; type?: string; name?: string } = {},
+  opts: { date?: string; time?: string; opponent?: string; type?: string; name?: string; notifyPlayers?: boolean } = {},
 ): Promise<{ eventId: string; releaseDecisionRequired: boolean }> {
   return h.run(world.managerId, 'createEvent', {
     teamId: world.teamId,
@@ -146,6 +146,8 @@ export async function createGame(
     name: opts.name,
     opponent: opts.opponent ?? 'Sharks',
     startsAt: zonedToUtc(opts.date ?? '2026-10-10', opts.time ?? '21:30', TZ).toISOString(),
+    // Most tests look at attendance notifications only; the "New Event" notice has its own test.
+    notifyPlayers: opts.notifyPlayers ?? false,
   });
 }
 

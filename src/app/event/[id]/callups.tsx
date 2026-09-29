@@ -2,32 +2,27 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, Text } from 'react-native';
-import { AddPlayerSheet, PlayerActionsSheet } from '../../../features/event/RosterSheets';
-import { rosterStatus, useEventData } from '../../../features/event/useEventData';
-import { useInviteCallups } from '../../../features/event/useInviteCallups';
+import { rosterStatus, spotsForCallups, useEventData } from '../../../features/event/useEventData';
 import type { CallupInvite } from '../../../lib/data';
 import { Avatar } from '../../../ui/Avatar';
-import { Badge, Button, Card, Empty, ErrorText, ListRow, Loading, Notice, Screen, TabBar } from '../../../ui/components';
+import { Badge, Button, Card, Empty, ErrorText, ListRow, Loading, Notice, ProgressBar, Screen, TabBar } from '../../../ui/components';
 import { colors, font, space, type Tone } from '../../../ui/theme';
 import { TeamAccent } from '../../../ui/TeamAccent';
-import type { EventRosterEntry } from '../../../domain/index.ts';
 
-type Status = 'Pending' | 'Accepted' | 'Declined' | 'Closed';
-const TONE: Record<Status, Tone> = { Pending: 'attention', Accepted: 'positive', Declined: 'negative', Closed: 'neutral' };
-const statusOf = (i: CallupInvite): Status => (i.response === 'YES' ? 'Accepted' : i.response === 'NO' ? 'Declined' : i.closed_at ? 'Closed' : 'Pending');
+type Status = 'Pending' | 'Accepted' | 'Declined' | 'Maybe' | 'Removed';
+const TONE: Record<Status, Tone> = { Pending: 'attention', Accepted: 'positive', Declined: 'negative', Maybe: 'primary', Removed: 'neutral' };
+const statusOf = (i: CallupInvite): Status =>
+  i.closed_at && i.response !== 'YES' ? 'Removed' : i.response === 'YES' ? 'Accepted' : i.response === 'NO' ? 'Declined' : i.response === 'MAYBE' ? 'Maybe' : 'Pending';
 
 /**
- * Wireframes 3A–3F and 8D–8F: callup invitations for one Event and how each one stands. Callups are
- * chosen by the Team's callup mode, so Invite Callups fills the open spots from the callup list.
+ * Wireframes 3A–3F and 8D–8F: callup invitations for one Event and how each one stands. The Manager
+ * picks who to invite on the Invite Callups screen; tap a callup to change their status or remove them.
  */
 export default function EventCallups() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const { data, error, loading, reload, teamsLoading, membership, manager } = useEventData(id);
   const [tab, setTab] = useState<'ALL' | Status>('ALL');
-  const [selected, setSelected] = useState<EventRosterEntry | null>(null);
-  const [adding, setAdding] = useState(false);
-  const callups = useInviteCallups(id, () => void reload());
 
   if (teamsLoading || (loading && !data)) return <Loading />;
   if (!data || !membership) return <Empty title="Event not found" body={error ?? undefined} />;
@@ -37,25 +32,22 @@ export default function EventCallups() {
   const t = membership.team;
   const released = detail.event.release_state === 'RELEASED';
   const status = rosterStatus(detail, team, membership);
+  const open = spotsForCallups(detail, team, membership);
   const positionName = new Map(team.positions.map((p) => [p.id, p.name]));
-  const names = new Map(team.members.map((m) => [m.user_id, m]));
-  const invites = detail.invites;
-  const count = (s: Status) => invites.filter((i) => statusOf(i) === s).length;
-  const shown = invites.filter((i) => tab === 'ALL' || statusOf(i) === tab);
+  const members = new Map(team.members.map((m) => [m.user_id, m]));
+  // The latest invitation per person.
+  const latest = [...new Map(detail.invites.map((i) => [i.user_id, i])).values()];
+  const count = (s: Status) => latest.filter((i) => statusOf(i) === s).length;
+  const shown = latest.filter((i) => tab === 'ALL' || statusOf(i) === tab);
   const mode = `${t.callup_mode === 'BASIC' ? 'Basic' : 'Advanced'} (${t.callup_selection_method === 'RANDOMIZED_ROTATION' ? 'Randomized' : 'Listed Order'})`;
+  const attending = status.counts.goalies + status.counts.players;
+  const capacity = status.openSpots === null ? null : status.coverage.reduce((s, c) => s + c.required, 0) + detail.event.callup_spots;
 
   return (
     <TeamAccent color={t.accent_color}>
       <Screen
         onRefresh={reload}
-        footer={
-          released ? (
-            <>
-              <Button label="Invite Callups" busy={callups.busy} onPress={() => void callups.invite()} />
-              <Button label="Add a Specific Player" variant="secondary" size="sm" onPress={() => setAdding(true)} />
-            </>
-          ) : undefined
-        }
+        footer={released ? <Button label={latest.length ? 'Invite More Callups' : 'Invite Callups'} onPress={() => router.push({ pathname: '/event/[id]/invite-callups', params: { id } })} /> : undefined}
       >
         <ErrorText error={error} />
         <Pressable
@@ -70,14 +62,27 @@ export default function EventCallups() {
           <Ionicons name="settings-outline" size={20} color={colors.textMuted} />
         </Pressable>
 
-        {callups.result && <Notice tone="positive" title="Callup Invites Sent">{callups.result}</Notice>}
-        <ErrorText error={callups.error} />
-        {!released && <Notice tone="neutral" icon="alarm-outline">Callups are invited once attendance has been sent and a spot is open.</Notice>}
-        {released && status.openSpots === 0 && invites.length > 0 && <Notice tone="positive" title="Roster is full!" />}
+        {!released && <Notice tone="neutral" icon="alarm-outline">Callups can be invited once attendance has been sent.</Notice>}
+        {released && capacity !== null && (
+          <Card>
+            <Text style={font.heading}>Roster Status</Text>
+            <Text style={{ fontSize: 26, fontWeight: '800', color: colors.text }}>
+              {attending} / {capacity}
+            </Text>
+            <ProgressBar value={attending} max={capacity} tone={attending >= capacity ? 'positive' : 'attention'} />
+            {attending >= capacity ? (
+              <Notice tone="positive" title="Roster is full!" />
+            ) : open > 0 ? (
+              <Text style={font.small}>{`${open} ${open === 1 ? 'spot' : 'spots'} available for callups.`}</Text>
+            ) : (
+              <Text style={font.small}>Remaining spots are waiting on players who haven't answered.</Text>
+            )}
+          </Card>
+        )}
 
         <TabBar
           options={[
-            { value: 'ALL', label: `All (${invites.length})` },
+            { value: 'ALL', label: `All (${latest.length})` },
             { value: 'Pending', label: `Pending (${count('Pending')})` },
             { value: 'Accepted', label: `Accepted (${count('Accepted')})` },
             { value: 'Declined', label: `Declined (${count('Declined')})` },
@@ -88,31 +93,27 @@ export default function EventCallups() {
         <Card flush>
           {shown.length ? (
             shown.map((inv, i) => {
-              const m = names.get(inv.user_id);
-              const entry = detail.roster.find((r) => r.userId === inv.user_id);
+              const m = members.get(inv.user_id);
               const s = statusOf(inv);
               return (
                 <ListRow
-                  key={`${inv.user_id}-${i}`}
+                  key={inv.user_id}
                   first={i === 0}
-                  title={m?.display_name ?? entry?.displayName ?? 'Former member'}
+                  title={m?.display_name ?? 'Former member'}
                   subtitle={[m?.position_id ? positionName.get(m.position_id) : null, inv.target_position_id ? `For ${positionName.get(inv.target_position_id) ?? 'a Position'}` : null]
                     .filter(Boolean)
                     .join(' · ')}
                   leading={<Avatar name={m?.display_name ?? '?'} path={m?.avatar_path} size={32} />}
                   right={<Badge label={s} tone={TONE[s]} />}
-                  onPress={entry ? () => setSelected(entry) : undefined}
+                  onPress={() => router.push({ pathname: '/event/[id]/player/[userId]', params: { id, userId: inv.user_id } })}
                 />
               );
             })
           ) : (
-            <Text style={[font.small, { paddingVertical: space.lg }]}>{invites.length ? 'None in this list.' : 'No callups invited yet.'}</Text>
+            <Text style={[font.small, { paddingVertical: space.lg }]}>{latest.length ? 'None in this list.' : 'No callups invited yet.'}</Text>
           )}
         </Card>
         <Notice tone="primary">When a callup accepts, they are automatically added to the Event as Attending.</Notice>
-
-        <PlayerActionsSheet entry={selected} detail={detail} positionName={positionName} onClose={() => setSelected(null)} onChanged={() => void reload()} />
-        <AddPlayerSheet visible={adding} onClose={() => setAdding(false)} detail={detail} team={team} onAdded={() => void reload()} />
       </Screen>
     </TeamAccent>
   );

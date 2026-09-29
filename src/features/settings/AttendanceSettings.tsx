@@ -3,10 +3,10 @@ import { useState } from 'react';
 import { Text, View } from 'react-native';
 import { api } from '../../lib/api';
 import { useAction } from '../../lib/hooks';
-import { Button, Card, ErrorText, Notice, Segmented, Stepper, ToggleRow } from '../../ui/components';
+import { Button, Card, ErrorText, Notice, Segmented, Stepper } from '../../ui/components';
 import { clock } from '../../ui/format';
 import { TimeField } from '../../ui/TimeField';
-import { font, space } from '../../ui/theme';
+import { font } from '../../ui/theme';
 import type { SectionProps } from './types';
 
 export function AttendanceSettings({ membership, reload }: SectionProps) {
@@ -14,8 +14,6 @@ export function AttendanceSettings({ membership, reload }: SectionProps) {
   const [mode, setMode] = useState(team.attendance_mode);
   const [days, setDays] = useState(team.release_days_before);
   const [time, setTime] = useState<string | null>(team.release_time);
-  const [reminder, setReminder] = useState(team.reminder_enabled);
-  const [hours, setHours] = useState(team.reminder_hours_before);
   const [saved, setSaved] = useState(false);
   const { busy, error, setError, run } = useAction();
 
@@ -28,8 +26,6 @@ export function AttendanceSettings({ membership, reload }: SectionProps) {
         attendanceMode: mode,
         releaseDaysBefore: days,
         releaseTime: time,
-        reminderEnabled: reminder,
-        reminderHoursBefore: hours,
       });
       await reload();
       setSaved(true);
@@ -65,15 +61,6 @@ export function AttendanceSettings({ membership, reload }: SectionProps) {
           <Text style={font.small}>
             {days === 0 ? `Same day at ${clock(time)}` : `${days} calendar ${days === 1 ? 'day' : 'days'} before, at ${clock(time)}`} in {team.timezone}.
           </Text>
-        )}
-      </Card>
-      <Card>
-        <ToggleRow label="Manager reminder" hint='"X people have not completed their attendance."' value={reminder} onChange={setReminder} />
-        {reminder && (
-          <View style={[row, { gap: space.md }]}>
-            <Text style={font.body}>Hours before the Event</Text>
-            <Stepper label="Hours before the Event" value={hours} min={1} max={168} onChange={setHours} />
-          </View>
         )}
       </Card>
       <Text style={font.small}>Events already scheduled with the old default move to the new timing. Custom schedules stay as they are.</Text>

@@ -1,7 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { EVENT_DATETIME_CHANGED_WARNING, handleEventChange, localDate, localTime, zonedToUtc } from '../../domain/index.ts';
-import { EventForm, ReleaseDecisionSheet, eventFormError, eventFormParams, teamDefaultLocation, type EventFormValue } from '../../features/event/EventForm';
+import { EventForm, ReleaseDecisionSheet, endInstant, eventFormError, eventFormParams, teamDefaultLocation, type EventFormValue } from '../../features/event/EventForm';
 import { api } from '../../lib/api';
 import { loadEventDetail } from '../../lib/data';
 import { useAction, useLoader } from '../../lib/hooks';
@@ -20,6 +20,7 @@ export default function EditEvent() {
   const [form, setForm] = useState<EventFormValue | null>(null);
   const [date, setDate] = useState<string | null>(null);
   const [time, setTime] = useState<string | null>(null);
+  const [endTime, setEndTime] = useState<string | null>(null);
   const [askRelease, setAskRelease] = useState(false);
   const [pickingDate, setPickingDate] = useState(false);
   const { busy, error, setError, run } = useAction();
@@ -38,9 +39,11 @@ export default function EditEvent() {
       opponent: e.opponent ?? '',
       customLocation: e.location === teamDefaultLocation(team) ? null : (e.location ?? ''),
       notes: e.notes ?? '',
+      homeAway: e.home_away,
     });
     setDate(localDate(start, team.timezone));
     setTime(localTime(start, team.timezone));
+    setEndTime(e.ends_at ? localTime(new Date(e.ends_at), team.timezone) : null);
   }, [data, team, form]);
 
   if (teams.loading || (loading && !data)) return <Loading />;
@@ -60,10 +63,12 @@ export default function EditEvent() {
       if (!nextStart) return setError('Enter a start time.');
       // Warn before saving a date or time change after release (spec §30).
       if (impact?.requiresNewRelease && !(await confirm.ask('Change date/time?', EVENT_DATETIME_CHANGED_WARNING, 'Save Change'))) return;
+      const endsAt = endInstant(date, time!, endTime, team.timezone);
       const result = await api<{ warning: string | null; releaseDecisionRequired: boolean }>('updateEvent', {
         eventId: event.id,
         ...eventFormParams(form, team),
         startsAt: nextStart.toISOString(),
+        endsAt: endsAt ? endsAt.toISOString() : null,
       });
       if (result.releaseDecisionRequired) setAskRelease(true);
       else router.back();
@@ -102,6 +107,8 @@ export default function EditEvent() {
             </Card>
           )}
           <TimeField label="Start Time" required value={time} onChange={setTime} hint={`In the Team's time zone (${team.timezone}).`} />
+          <TimeField label="End Time (optional)" value={endTime} onChange={setEndTime} />
+          {endTime ? <Button label="Clear End Time" variant="ghost" size="sm" onPress={() => setEndTime(null)} style={{ alignSelf: 'flex-start' }} /> : null}
         </EventForm>
         {impact?.requiresNewRelease && <Notice tone="attention">{EVENT_DATETIME_CHANGED_WARNING}</Notice>}
         <ErrorText error={error} />

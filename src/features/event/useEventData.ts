@@ -1,7 +1,7 @@
 // Everything an Event screen needs: the Event and its roster, the Team, and for Managers the Team's
 // Positions and members. Stays live while anyone answers (spec §58).
-import { calculateRosterStatus } from '../../domain/index.ts';
-import { loadEventDetail, loadTeamDetail, type EventDetail, type MyMembership, type TeamDetail } from '../../lib/data';
+import { calculateCallupNeeds, calculateRosterStatus } from '../../domain/index.ts';
+import { loadEventDetail, loadMyCallups, loadTeamDetail, type EventDetail, type MyMembership, type TeamDetail } from '../../lib/data';
 import { useLoader, useRealtime } from '../../lib/hooks';
 import { isManagerOf, useTeams } from '../../lib/teams';
 
@@ -12,8 +12,11 @@ export function useEventData(id: string) {
   const state = useLoader(async () => {
     const detail = await loadEventDetail(id, (teamId) => isManagerOf(membershipFor(teamId)));
     const membership = membershipFor(detail.event.team_id);
-    const team = membership && isManagerOf(membership) ? await loadTeamDetail(membership.team, true) : null;
-    return { detail, team };
+    const [team, callups] = await Promise.all([
+      membership && isManagerOf(membership) ? loadTeamDetail(membership.team, true) : Promise.resolve(null),
+      loadMyCallups(),
+    ]);
+    return { detail, team, myCallup: callups.get(id) };
   }, [id, teams.active.length]);
 
   useRealtime(
@@ -37,25 +40,33 @@ export function useEventData(id: string) {
 }
 
 /** Roster numbers for Managers: open spots, counts and Position coverage. */
-export function rosterStatus(detail: EventDetail, team: TeamDetail, membership: MyMembership) {
-  return calculateRosterStatus(detail.roster, {
+function rosterContext(detail: EventDetail, team: TeamDetail, membership: MyMembership) {
+  return {
     requirements: detail.requirements,
     config: team.config,
     mode: membership.team.callup_mode,
-    callupTargets: new Map(detail.invites.map((i) => [i.user_id, i.target_position_id])),
-  });
+    callupTargets: new Map(detail.invites.filter((i) => !i.closed_at && i.response !== 'NO').map((i) => [i.user_id, i.target_position_id])),
+    callupSpots: detail.event.callup_spots,
+  };
+}
+
+export function rosterStatus(detail: EventDetail, team: TeamDetail, membership: MyMembership) {
+  return calculateRosterStatus(detail.roster, rosterContext(detail, team, membership));
 }
 
 /**
  * Spots callups could fill now: open spots nobody is still expected to take. Players who haven't
- * answered (and callups already asked) still count, so callups only replace a definite No (decision 4).
+ * answered or said Maybe (and callups already asked) still count, so callups only replace a definite
+ * No (decision 4).
  */
-export function spotsForCallups(status: ReturnType<typeof calculateRosterStatus>): number {
-  return status.openSpots === null ? 0 : Math.max(0, status.openSpots - status.counts.noResponse);
+export function spotsForCallups(detail: EventDetail, team: TeamDetail, membership: MyMembership): number {
+  return calculateCallupNeeds(detail.roster, rosterContext(detail, team, membership)).reduce((s, n) => s + n.count, 0);
 }
 
 /** Whether this Event's roster needs differ from the Team default (wireframe 2E "Custom Roster for This Event"). */
-export function hasCustomRequirements(detail: EventDetail, team: TeamDetail): boolean {
+export function hasCustomRequirements(detail: EventDetail, team: TeamDetail, membership: MyMembership): boolean {
+  const defaultSpots = membership.team.include_callups ? membership.team.callup_spots : 0;
+  if (detail.event.callup_spots !== defaultSpots) return true;
   const norm = (list: { positionId: string; quantity: number }[]) =>
     list
       .filter((r) => r.quantity > 0)

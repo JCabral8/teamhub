@@ -1,7 +1,8 @@
 // Core domain vocabulary shared by the app, the server services and the tests.
 // Business rules live in the sibling modules; this file only defines shapes.
 
-export const ATTENDANCE_RESPONSES = ['YES', 'NO', 'NO_RESPONSE'] as const;
+/** MAYBE ("not sure yet") follows the wireframes: it holds no roster spot and Managers may follow up. */
+export const ATTENDANCE_RESPONSES = ['YES', 'NO', 'MAYBE', 'NO_RESPONSE'] as const;
 export type AttendanceResponse = (typeof ATTENDANCE_RESPONSES)[number];
 
 /** Responses a person can actively choose. NO_RESPONSE is only ever the initial state. */
@@ -64,7 +65,7 @@ export interface EventRosterEntry {
   pendingSince: string | null;
 }
 
-export type RosterStanding = 'ATTENDING' | 'PENDING_APPROVAL' | 'NO_RESPONSE' | 'NOT_ATTENDING';
+export type RosterStanding = 'ATTENDING' | 'PENDING_APPROVAL' | 'MAYBE' | 'NO_RESPONSE' | 'NOT_ATTENDING';
 
 export interface TeamAttendanceSettings {
   timezone: string;

@@ -65,6 +65,6 @@ Push messages go out right after the command that created them, and the per-minu
 
 ## Client rules
 
-- Every write goes through the `api` function. Tables are read-only to clients apart from profile name and Position preference, availability dates, notification read state and push tokens.
-- Select columns by name from `event_roster_players`. The `source` column is hidden from clients so players can't tell callups apart.
-- Manager-only data (member Positions, Event planning Positions, callup pools and invitations) is readable only by that Team's Managers.
+- Every write goes through the `api` function. Tables are read-only to clients apart from profile name, Position preference, phone and photo, availability dates and reasons, notification read state and push tokens.
+- Select columns by name from `event_roster_players`. The `source` column is hidden from clients so players can't tell other people's callups apart.
+- Manager-only data (member Positions, Event planning Positions, callup pools and invitations) is readable only by that Team's Managers. A callup reads their own invitations through `my_callup_invitations()`, which returns the Position needed and their answer but never rank or pool.

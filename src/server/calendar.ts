@@ -46,11 +46,12 @@ export async function calendarForToken(sql: Sql | Tx, token: string, now: Date, 
       location: string | null;
       notes: string | null;
       starts_at: Date;
+      ends_at: Date | null;
       updated_at: Date;
       response: AttendanceResponse | null;
     }[]
   >`
-    select e.id, t.id as team_id, t.name as team_name, e.type, e.name, e.opponent, e.location, e.notes, e.starts_at, e.updated_at,
+    select e.id, t.id as team_id, t.name as team_name, e.type, e.name, e.opponent, e.location, e.notes, e.starts_at, e.ends_at, e.updated_at,
       (select r.response from public.event_roster_players r
         where r.event_id = e.id and r.user_id = ${feed.user_id} and r.removed_at is null) as response
     from public.events e
@@ -70,6 +71,7 @@ export async function calendarForToken(sql: Sql | Tx, token: string, now: Date, 
       location: r.location,
       notes: r.notes,
       startsAt: r.starts_at,
+      endsAt: r.ends_at,
       updatedAt: r.updated_at,
       response: r.response,
       url: `${base}/event/${r.id}`,

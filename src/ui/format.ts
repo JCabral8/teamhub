@@ -1,6 +1,6 @@
 // Display helpers. Event times always render in the Team's time zone (spec §23).
 import { Platform } from 'react-native';
-import { notifications, type EventType, type RosterStanding } from '../domain/index.ts';
+import { localTime, notifications, type EventType, type RosterStanding } from '../domain/index.ts';
 import type { IconName } from './components';
 import type { Tone } from './theme';
 
@@ -23,6 +23,12 @@ export function matchTitle(e: { type: EventType; name: string | null; opponent: 
   return eventTitle(e);
 }
 
+/** "6:00 PM – 8:00 PM", or just the start when there's no end time. */
+export function timeRange(e: { starts_at: string; ends_at: string | null }, timezone: string): string {
+  const start = clock(localTime(new Date(e.starts_at), timezone));
+  return e.ends_at ? `${start} – ${clock(localTime(new Date(e.ends_at), timezone))}` : start;
+}
+
 export function eventWhen(startsAt: string | Date, timezone: string): string {
   return notifications.formatEventTime(new Date(startsAt), timezone);
 }
@@ -42,6 +48,7 @@ export function clock(time: string): string {
 export const STANDING_DISPLAY: Record<RosterStanding, { label: string; tone: Tone; icon: IconName }> = {
   ATTENDING: { label: 'Attending', tone: 'positive', icon: 'checkmark-circle' },
   PENDING_APPROVAL: { label: 'Pending Approval', tone: 'attention', icon: 'time' },
+  MAYBE: { label: 'Maybe', tone: 'primary', icon: 'help-circle' },
   NO_RESPONSE: { label: 'No Response', tone: 'neutral', icon: 'help-circle' },
   NOT_ATTENDING: { label: 'Not Attending', tone: 'negative', icon: 'close-circle' },
 };

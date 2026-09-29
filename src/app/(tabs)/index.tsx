@@ -2,7 +2,16 @@ import { useRouter } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 import { localDate, localTime } from '../../domain/index.ts';
 import { useAuth } from '../../lib/auth';
-import { loadEvents, loadManagerAlerts, loadMyRosterLines, type ManagerAlerts, type MyRosterLine, type TeamEvent } from '../../lib/data';
+import {
+  loadEvents,
+  loadManagerAlerts,
+  loadMyCallups,
+  loadMyRosterLines,
+  type ManagerAlerts,
+  type MyCallup,
+  type MyRosterLine,
+  type TeamEvent,
+} from '../../lib/data';
 import { useLoader, useRealtime } from '../../lib/hooks';
 import { isManagerOf, useTeams } from '../../lib/teams';
 import { Button, ButtonRow, Card, Empty, ErrorText, ListRow, Loading, Notice, Screen, SectionLabel } from '../../ui/components';
@@ -22,14 +31,16 @@ export default function Home() {
   const managedIds = teams.active.filter(isManagerOf).map((m) => m.team.id);
 
   const { data, error, loading, reload } = useLoader(async () => {
-    if (!userId) return { events: [] as TeamEvent[], lines: new Map<string, MyRosterLine>(), alerts: null as ManagerAlerts | null };
+    if (!userId)
+      return { events: [] as TeamEvent[], lines: new Map<string, MyRosterLine>(), callups: new Map<string, MyCallup>(), alerts: null as ManagerAlerts | null };
     const events = await loadEvents(teamIds, { from: new Date() });
     const released = events.filter((e) => e.release_state === 'RELEASED' && managedIds.includes(e.team_id)).map((e) => e.id);
-    const [lines, alerts] = await Promise.all([
+    const [lines, callups, alerts] = await Promise.all([
       loadMyRosterLines(userId, events.map((e) => e.id)),
+      loadMyCallups(),
       managedIds.length ? loadManagerAlerts(managedIds, released) : Promise.resolve(null),
     ]);
-    return { events, lines, alerts };
+    return { events, lines, callups, alerts };
   }, [teamIds.join(','), managedIds.join(','), userId]);
 
   useRealtime(`home-${userId}`, [{ table: 'notifications', filter: `user_id=eq.${userId}` }], () => {
@@ -111,15 +122,17 @@ export default function Home() {
       )}
       {needsAnswer.map((e) => {
         const team = teamOf.get(e.team_id)!;
+        const callup = data?.callups.get(e.id);
+        const isCallup = !!callup && !callup.closed;
         return (
           <Card key={e.id} style={[styles.action, { borderLeftColor: accent.accent }]}>
-            <Text style={font.heading}>Attendance Needed</Text>
+            <Text style={font.heading}>{isCallup ? 'Callup Request' : 'Attendance Needed'}</Text>
             <View>
               <Text style={font.body}>{team.name}</Text>
               <Text style={font.small}>{whenLine(e, team.timezone)}</Text>
               <Text style={font.small}>{typeLine(e)}</Text>
             </View>
-            <Button label="Respond" onPress={() => open(e.id)} />
+            <Button label={isCallup ? 'View Game' : 'Respond'} onPress={() => open(e.id)} />
           </Card>
         );
       })}
@@ -144,6 +157,7 @@ export default function Home() {
                 showTeam={multiTeam}
                 accentColor={multiTeam ? team.accent_color : undefined}
                 myLine={data?.lines.get(e.id)}
+                myCallup={data?.callups.get(e.id)}
                 onPress={() => open(e.id)}
               />
             );

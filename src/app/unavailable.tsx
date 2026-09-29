@@ -1,10 +1,10 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Text } from 'react-native';
-import { localDate } from '../domain/index.ts';
+import { DECLINE_REASON_MAX_LENGTH, localDate } from '../domain/index.ts';
 import { markUnavailableRange } from '../lib/data';
 import { useAction } from '../lib/hooks';
-import { Button, Card, ErrorText, FieldButton, Notice, Screen } from '../ui/components';
+import { Button, Card, ErrorText, Field, FieldButton, Notice, Screen } from '../ui/components';
 import { deviceTimeZone, shortDate } from '../ui/format';
 import { MonthCalendar } from '../ui/MonthCalendar';
 import { font } from '../ui/theme';
@@ -17,6 +17,7 @@ export default function MarkUnavailable() {
   const [start, setStart] = useState(params.date && params.date >= today ? params.date : today);
   const [end, setEnd] = useState<string | null>(null);
   const [editing, setEditing] = useState<'start' | 'end' | null>(null);
+  const [reason, setReason] = useState('');
   const { busy, error, setError, run } = useAction();
 
   const pick = (d: string) => {
@@ -30,7 +31,7 @@ export default function MarkUnavailable() {
   const save = () =>
     run(async () => {
       if (end && end < start) return setError('The end date must be on or after the start date.');
-      await markUnavailableRange(start, end ?? start);
+      await markUnavailableRange(start, end ?? start, reason.trim() || null);
       router.back();
     });
 
@@ -48,6 +49,9 @@ export default function MarkUnavailable() {
             onSelect={pick}
           />
         )}
+      </Card>
+      <Card>
+        <Field label="Reason (optional)" value={reason} onChangeText={setReason} maxLength={DECLINE_REASON_MAX_LENGTH} showCount placeholder="Vacation" />
       </Card>
       <Notice tone="primary">Applies to all your Teams. Attendance for Events on these dates is recorded as No when it is sent, and you can still change it to Yes.</Notice>
       <ErrorText error={error} />
