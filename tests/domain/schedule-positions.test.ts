@@ -176,12 +176,13 @@ describe('Statistics', () => {
       { userId: 'p', source: 'ROSTER', response: 'NO_RESPONSE' },
       { userId: 'p', source: 'CALLUP', response: 'YES' },
       { userId: 'p', source: 'CALLUP', response: 'NO' },
+      { userId: 'p', source: 'ROSTER', response: 'MAYBE' },
     ]);
     expect(stats).toEqual([
       {
         userId: 'p',
-        regular: { invitations: 3, yes: 1, no: 1, noResponse: 1 },
-        callup: { invitations: 2, accepted: 1, declined: 1, noResponse: 0 },
+        regular: { invitations: 4, yes: 1, no: 1, maybe: 1, noResponse: 1 },
+        callup: { invitations: 2, accepted: 1, declined: 1, maybe: 0, noResponse: 0 },
       },
     ]);
   });
@@ -190,10 +191,14 @@ describe('Statistics', () => {
 describe('Notifications', () => {
   const event = { type: 'GAME' as const, name: null, opponent: 'Hawks', startsAt: EVENT, timezone: TZ };
 
-  it('#39 an invitation reads the same for everyone and never mentions callups', () => {
+  it('#39 a roster invitation never mentions callups; a callup is told it is one (wireframe 7A)', () => {
     const n = notifications.eventInvitation(event);
     expect(n).toEqual({ type: 'EVENT_INVITATION', title: 'Game vs Hawks · Sat, Oct 10, 9:30 PM', body: 'Are you attending? Tap to respond.' });
     expect(JSON.stringify(n)).not.toMatch(/callup/i);
+    const c = notifications.callupInvitation(event);
+    expect(c).toMatchObject({ type: 'CALLUP_INVITATION', title: 'Callup Opportunity' });
+    expect(c.body).toMatch(/invited as a callup for Game vs Hawks/);
+    expect(JSON.stringify(c)).not.toMatch(/rank|pool/i);
   });
 
   it('manual mode tells the manager attendance has not been sent yet', () => {

@@ -17,13 +17,15 @@ export default function EventRosterSettings() {
   const { data, error: loadError, loading, teamsLoading, membership, manager, reload } = useEventData(id);
   const [useDefault, setUseDefault] = useState<boolean | null>(null);
   const [values, setValues] = useState<Record<string, number>>({});
+  const [callupSpots, setCallupSpots] = useState(0);
   const { busy, error, run } = useAction();
 
   const team = data?.team;
   const editable = team ? sortPositions(team.positions).filter((p) => p.kind === 'BASE' || (p.kind === 'GOALIE' && team.config.goalieEnabled)) : [];
   useEffect(() => {
     if (!data?.team || useDefault !== null) return;
-    setUseDefault(!hasCustomRequirements(data.detail, data.team));
+    setUseDefault(!hasCustomRequirements(data.detail, data.team, membership!));
+    setCallupSpots(data.detail.event.callup_spots);
     setValues(Object.fromEntries(editable.map((p) => [p.id, data.detail.requirements.find((r) => r.positionId === p.id)?.quantity ?? 0])));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data]);
@@ -34,7 +36,9 @@ export default function EventRosterSettings() {
   if (useDefault === null) return <Loading />;
 
   const defaults = Object.fromEntries(editable.map((p) => [p.id, team.requirements.find((r) => r.positionId === p.id)?.quantity ?? 0]));
+  const defaultSpots = membership.team.include_callups ? membership.team.callup_spots : 0;
   const shown = useDefault ? defaults : values;
+  const spots = useDefault ? defaultSpots : callupSpots;
 
   const save = () =>
     run(async () => {
@@ -43,6 +47,7 @@ export default function EventRosterSettings() {
         requirements: Object.entries(shown)
           .filter(([, q]) => q > 0)
           .map(([positionId, quantity]) => ({ positionId, quantity })),
+        callupSpots: spots,
       });
       await reload();
       router.back();
@@ -68,6 +73,17 @@ export default function EventRosterSettings() {
             ) : (
               <StepperRow key={p.id} label={p.name} value={values[p.id] ?? 0} onChange={(v) => setValues({ ...values, [p.id]: v })} />
             ),
+          )}
+        </Card>
+        <Card>
+          <Text style={font.heading}>Callup Spots (This Event)</Text>
+          {useDefault ? (
+            <Text style={font.body}>{defaultSpots ? `${defaultSpots} callup ${defaultSpots === 1 ? 'spot' : 'spots'} (Team default)` : 'No callup spots (Team default)'}</Text>
+          ) : (
+            <>
+              <ToggleRow label="Include callups" hint="Extra roster spots only callups can take." value={callupSpots > 0} onChange={(v) => setCallupSpots(v ? Math.max(1, callupSpots) : 0)} />
+              {callupSpots > 0 && <StepperRow label="Number of callup spots" value={callupSpots} min={1} max={20} onChange={setCallupSpots} />}
+            </>
           )}
         </Card>
         <Notice tone="primary">Overrides apply to this Event only and do not change your Team defaults.</Notice>

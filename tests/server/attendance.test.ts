@@ -70,13 +70,20 @@ describe('Responses (#1–#3)', () => {
 });
 
 describe('Attendance changes and Pending Approval (#4–#8)', () => {
-  it('#4 Yes → No opens a spot that a callup is invited for', async () => {
+  it('#4 Yes → No opens a spot; the Manager is offered a callup for it and invites them', async () => {
     const t = await buildTeam(h, { callups: [['CF1', 'Forward']] });
     const eventId = await releasedGame(h, t);
     await everyoneYes(h, t, eventId);
-    expect(await openInvites(h, eventId)).toEqual([]);
+    expect((await h.run(t.managerId, 'getCallupCandidates', { eventId })).spots).toBe(0);
     await h.run(t.players.F1.userId, 'respondAttendance', { eventId, response: 'NO' });
+    // Nothing is invited automatically (wireframes 3, 8).
+    expect(await openInvites(h, eventId)).toEqual([]);
+    const plan = await h.run(t.managerId, 'getCallupCandidates', { eventId });
+    expect(plan.spots).toBe(1);
+    expect(plan.candidates).toEqual([expect.objectContaining({ userId: t.players.CF1.userId, suggested: true, onEvent: false })]);
+    await h.run(t.managerId, 'inviteCallups', { eventId, userIds: [t.players.CF1.userId] });
     expect((await openInvites(h, eventId)).map((i) => i.user_id)).toEqual([t.players.CF1.userId]);
+    expect(await notificationsFor(h, t.players.CF1.userId, 'CALLUP_INVITATION')).toHaveLength(1);
   });
 
   it('#5 No → Yes with space restores the player immediately', async () => {
@@ -93,7 +100,9 @@ describe('Attendance changes and Pending Approval (#4–#8)', () => {
     const eventId = await releasedGame(h, t);
     await everyoneYes(h, t, eventId);
     await h.run(t.players.F1.userId, 'respondAttendance', { eventId, response: 'NO' });
+    await h.run(t.managerId, 'runCallupSelection', { eventId });
     await h.run(t.players.CF1.userId, 'respondAttendance', { eventId, response: 'YES' });
+    expect(await h.run(t.players.F1.userId, 'previewAttendance', { eventId })).toEqual({ rosterFull: true });
     const res = await h.run(t.players.F1.userId, 'respondAttendance', { eventId, response: 'YES' });
     expect(res.standing).toBe('PENDING_APPROVAL');
     expect((await rosterRow(h, eventId, t.players.F1.userId)).pending_since).not.toBeNull();
@@ -101,75 +110,107 @@ describe('Attendance changes and Pending Approval (#4–#8)', () => {
     expect(await notificationsFor(h, t.managerId, 'ATTENDANCE_DISCREPANCY')).toHaveLength(1);
   });
 
-  it('#7 a pending player takes the next open spot, before any callup is invited', async () => {
-    const t = await buildTeam(h, { callups: [['CF1', 'Forward'], ['CF2', 'Forward']] });
-    const eventId = await releasedGame(h, t);
-    await everyoneYes(h, t, eventId);
-    await h.run(t.players.F1.userId, 'respondAttendance', { eventId, response: 'NO' });
-    await h.run(t.players.CF1.userId, 'respondAttendance', { eventId, response: 'YES' });
-    await h.run(t.players.F1.userId, 'respondAttendance', { eventId, response: 'YES' });
-
-    await h.run(t.players.F2.userId, 'respondAttendance', { eventId, response: 'NO' });
-    expect((await rosterRow(h, eventId, t.players.F1.userId)).pending_since).toBeNull();
-    expect(await notificationsFor(h, t.players.F1.userId, 'ROSTER_SPOT_CONFIRMED')).toHaveLength(1);
-    expect(await openInvites(h, eventId)).toEqual([expect.objectContaining({ user_id: t.players.CF1.userId, response: 'YES' })]);
-  });
-
-  it('#8 multiple pending players: first come, first served', async () => {
-    const t = await buildTeam(h, { callups: [['CF1', 'Forward'], ['CF2', 'Forward']] });
-    const eventId = await releasedGame(h, t);
-    await everyoneYes(h, t, eventId);
-    for (const [player, callup] of [['F1', 'CF1'], ['F2', 'CF2']]) {
-      await h.run(t.players[player].userId, 'respondAttendance', { eventId, response: 'NO' });
-      await h.run(t.players[callup].userId, 'respondAttendance', { eventId, response: 'YES' });
-    }
-    h.setNow('2026-10-01T12:05:00Z');
-    await h.run(t.players.F2.userId, 'respondAttendance', { eventId, response: 'YES' });
-    h.setNow('2026-10-01T12:10:00Z');
-    await h.run(t.players.F1.userId, 'respondAttendance', { eventId, response: 'YES' });
-    h.setNow('2026-10-01T12:15:00Z');
-    await h.run(t.players.F3.userId, 'respondAttendance', { eventId, response: 'NO' });
-
-    expect((await rosterRow(h, eventId, t.players.F2.userId)).pending_since).toBeNull();
-    expect((await rosterRow(h, eventId, t.players.F1.userId)).pending_since).not.toBeNull();
-  });
-});
-
-describe('Callups (#9–#14)', () => {
-  it('#9 a callup accepts and fills the vacancy', async () => {
+  it('#7 a Manager approves a pending player, who is told they are in (wireframe 4D, 4E)', async () => {
     const t = await buildTeam(h, { callups: [['CF1', 'Forward']] });
     const eventId = await releasedGame(h, t);
     await everyoneYes(h, t, eventId);
     await h.run(t.players.F1.userId, 'respondAttendance', { eventId, response: 'NO' });
+    await h.run(t.managerId, 'runCallupSelection', { eventId });
+    await h.run(t.players.CF1.userId, 'respondAttendance', { eventId, response: 'YES' });
+    await h.run(t.players.F1.userId, 'respondAttendance', { eventId, response: 'YES' });
+
+    // A spot opening does not promote anyone on its own.
+    await h.run(t.players.F2.userId, 'respondAttendance', { eventId, response: 'NO' });
+    expect((await rosterRow(h, eventId, t.players.F1.userId)).pending_since).not.toBeNull();
+
+    expect(await h.fail(t.players.F3.userId, 'approvePendingPlayer', { eventId, userId: t.players.F1.userId })).toBe('FORBIDDEN');
+    await h.run(t.managerId, 'approvePendingPlayer', { eventId, userId: t.players.F1.userId });
+    expect(await rosterRow(h, eventId, t.players.F1.userId)).toMatchObject({ response: 'YES', pending_since: null });
+    expect(await notificationsFor(h, t.players.F1.userId, 'ROSTER_SPOT_CONFIRMED')).toHaveLength(1);
+    expect(await h.fail(t.managerId, 'approvePendingPlayer', { eventId, userId: t.players.F1.userId })).toBe('NOT_PENDING');
+  });
+
+  it('#8 a Manager declines a pending player: Not Attending and "Not Selected" (wireframe 4F)', async () => {
+    const t = await buildTeam(h, { callups: [['CF1', 'Forward']] });
+    const eventId = await releasedGame(h, t);
+    await everyoneYes(h, t, eventId);
+    await h.run(t.players.F1.userId, 'respondAttendance', { eventId, response: 'NO' });
+    await h.run(t.managerId, 'runCallupSelection', { eventId });
+    await h.run(t.players.CF1.userId, 'respondAttendance', { eventId, response: 'YES' });
+    await h.run(t.players.F1.userId, 'respondAttendance', { eventId, response: 'YES' });
+    await h.run(t.managerId, 'declinePendingPlayer', { eventId, userId: t.players.F1.userId });
+    expect(await rosterRow(h, eventId, t.players.F1.userId)).toMatchObject({ response: 'NO', pending_since: null, response_origin: 'MANAGER' });
+    expect(await notificationsFor(h, t.players.F1.userId, 'NOT_SELECTED')).toHaveLength(1);
+  });
+
+  it('Maybe holds no spot and can be changed later (wireframe 6)', async () => {
+    const t = await buildTeam(h);
+    const eventId = await releasedGame(h, t);
+    const res = await h.run(t.players.F1.userId, 'respondAttendance', { eventId, response: 'MAYBE' });
+    expect(res.standing).toBe('MAYBE');
+    expect(await rosterRow(h, eventId, t.players.F1.userId)).toMatchObject({ response: 'MAYBE', reason: null });
+    expect((await h.run(t.players.F1.userId, 'respondAttendance', { eventId, response: 'YES' })).standing).toBe('ATTENDING');
+  });
+});
+
+describe('Callups (#9–#14)', () => {
+  it('#9 a callup accepts, fills the vacancy and is told they are confirmed', async () => {
+    const t = await buildTeam(h, { callups: [['CF1', 'Forward']] });
+    const eventId = await releasedGame(h, t);
+    await everyoneYes(h, t, eventId);
+    await h.run(t.players.F1.userId, 'respondAttendance', { eventId, response: 'NO' });
+    await h.run(t.managerId, 'inviteCallups', { eventId, userIds: [t.players.CF1.userId] });
     const res = await h.run(t.players.CF1.userId, 'respondAttendance', { eventId, response: 'YES' });
     expect(res.standing).toBe('ATTENDING');
     expect(await notificationsFor(h, t.managerId, 'CALLUP_ACCEPTED')).toHaveLength(1);
+    expect(await notificationsFor(h, t.players.CF1.userId, 'CALLUP_CONFIRMED')).toHaveLength(1);
   });
 
-  it('#10 a callup declines: the next callup is invited and the decliner is not asked again', async () => {
+  it('#10 a callup declines: the Manager is told and the next callup is suggested', async () => {
     const t = await buildTeam(h, { callups: [['CF1', 'Forward'], ['CF2', 'Forward']], settings: { callupSelectionMethod: 'PREDETERMINED_SEQUENCE' } });
     const eventId = await releasedGame(h, t);
     await everyoneYes(h, t, eventId);
     await h.run(t.players.F1.userId, 'respondAttendance', { eventId, response: 'NO' });
+    await h.run(t.managerId, 'runCallupSelection', { eventId });
     expect((await openInvites(h, eventId)).map((i) => i.user_id)).toEqual([t.players.CF1.userId]);
     await h.run(t.players.CF1.userId, 'respondAttendance', { eventId, response: 'NO' });
+    expect(await notificationsFor(h, t.managerId, 'CALLUP_DECLINED')).toHaveLength(1);
+    const plan = await h.run(t.managerId, 'getCallupCandidates', { eventId });
+    expect(plan.candidates.filter((c: { suggested: boolean }) => c.suggested).map((c: { userId: string }) => c.userId)).toEqual([t.players.CF2.userId]);
+    await h.run(t.managerId, 'runCallupSelection', { eventId });
     const invites = await openInvites(h, eventId);
     expect(invites.map((i) => [i.user_id, i.response])).toEqual([
       [t.players.CF1.userId, 'NO'],
       [t.players.CF2.userId, 'NO_RESPONSE'],
     ]);
-    expect(await notificationsFor(h, t.managerId, 'CALLUP_DECLINED')).toHaveLength(1);
     // Once the replacement accepts, the decliner cannot come back through Pending Approval.
     await h.run(t.players.CF2.userId, 'respondAttendance', { eventId, response: 'YES' });
     expect(await h.fail(t.players.CF1.userId, 'respondAttendance', { eventId, response: 'YES' })).toBe('CALLUP_SPOT_FILLED');
     expect((await rosterRow(h, eventId, t.players.CF1.userId)).pending_since).toBeNull();
   });
 
-  it('there is no default of three callups: a full roster invites nobody', async () => {
-    const t = await buildTeam(h, { callups: [['CF1', 'Forward'], ['CF2', 'Forward'], ['CF3', 'Forward'], ['CF4', 'Defence']] });
+  it('a full roster suggests nobody; callup spots add room for callups (wireframe 2)', async () => {
+    const t = await buildTeam(h, { callups: [['CF1', 'Forward'], ['CF2', 'Forward'], ['CF3', 'Forward'], ['CD4', 'Defence']] });
     const eventId = await releasedGame(h, t);
     await everyoneYes(h, t, eventId);
-    expect(await openInvites(h, eventId)).toEqual([]);
+    expect((await h.run(t.managerId, 'getCallupCandidates', { eventId })).spots).toBe(0);
+    expect(await h.run(t.managerId, 'runCallupSelection', { eventId })).toEqual({ invited: 0 });
+
+    const requirements = (await h.sql<{ positionId: string; quantity: number }[]>`
+      select team_position_id as "positionId", quantity from public.event_roster_requirements where event_id = ${eventId}`).map((r) => ({ ...r }));
+    await h.run(t.managerId, 'setEventRequirements', { eventId, requirements, callupSpots: 2 });
+    expect((await h.run(t.managerId, 'getCallupCandidates', { eventId })).spots).toBe(2);
+    await h.run(t.managerId, 'runCallupSelection', { eventId });
+    const invited = (await openInvites(h, eventId)).map((i) => i.user_id);
+    expect(invited).toHaveLength(2);
+    for (const id of invited) expect((await h.run(id, 'respondAttendance', { eventId, response: 'YES' })).standing).toBe('ATTENDING');
+  });
+
+  it('new Events take the Team callup spots when "Always include callups" is on', async () => {
+    const t = await buildTeam(h, { settings: { includeCallups: true, callupSpots: 3 } });
+    const { eventId } = await createGame(h, t);
+    const [{ callup_spots }] = await h.sql<{ callup_spots: number }[]>`select callup_spots from public.events where id = ${eventId}`;
+    expect(callup_spots).toBe(3);
   });
 
   it('#11 when the Defence pool is exhausted the Forward pool is searched', async () => {
@@ -177,11 +218,22 @@ describe('Callups (#9–#14)', () => {
     const eventId = await releasedGame(h, t);
     await everyoneYes(h, t, eventId);
     await h.run(t.players.D1.userId, 'respondAttendance', { eventId, response: 'NO' });
+    await h.run(t.managerId, 'runCallupSelection', { eventId });
     expect(await openInvites(h, eventId)).toEqual([
       expect.objectContaining({ user_id: t.players.CF1.userId, target_position_id: t.pos.Defence, pool_key: t.pos.Forward }),
     ]);
     const res = await h.run(t.players.CF1.userId, 'respondAttendance', { eventId, response: 'YES' });
     expect(res.standing).toBe('ATTENDING');
+  });
+
+  it('a hand-picked Forward callup can fill an open Defence spot', async () => {
+    const t = await buildTeam(h, { callups: [['CF1', 'Forward'], ['CF2', 'Forward']], settings: { callupMode: 'ADVANCED' } });
+    const eventId = await releasedGame(h, t);
+    await everyoneYes(h, t, eventId);
+    await h.run(t.players.D1.userId, 'respondAttendance', { eventId, response: 'NO' });
+    await h.run(t.managerId, 'inviteCallups', { eventId, userIds: [t.players.CF2.userId] });
+    expect(await openInvites(h, eventId)).toEqual([expect.objectContaining({ user_id: t.players.CF2.userId, target_position_id: t.pos.Defence })]);
+    expect((await h.run(t.players.CF2.userId, 'respondAttendance', { eventId, response: 'YES' })).standing).toBe('ATTENDING');
   });
 
   it('#12 a hybrid callup satisfies the missing Position ahead of higher-ranked forwards', async () => {
@@ -193,20 +245,23 @@ describe('Callups (#9–#14)', () => {
     const eventId = await releasedGame(h, t);
     await everyoneYes(h, t, eventId);
     await h.run(t.players.D1.userId, 'respondAttendance', { eventId, response: 'NO' });
+    await h.run(t.managerId, 'runCallupSelection', { eventId });
     expect(await openInvites(h, eventId)).toEqual([expect.objectContaining({ user_id: t.players.HY1.userId, pool_key: t.pos.Defence })]);
   });
 
-  it('#13 a missing Goalie invites a Goalie callup, never a skater', async () => {
+  it('#13 a missing Goalie suggests a Goalie callup, never a skater', async () => {
     const t = await buildTeam(h, { callups: [['CF1', 'Forward']] });
     const eventId = await releasedGame(h, t);
     await everyoneYes(h, t, eventId);
     await h.run(t.players.G1.userId, 'respondAttendance', { eventId, response: 'NO' });
+    await h.run(t.managerId, 'runCallupSelection', { eventId });
     expect(await openInvites(h, eventId)).toEqual([]);
 
     const t2 = await buildTeam(h, { callups: [['CF1', 'Forward'], ['CG1', 'Goalie']] });
     const e2 = await releasedGame(h, t2);
     await everyoneYes(h, t2, e2);
     await h.run(t2.players.G1.userId, 'respondAttendance', { eventId: e2, response: 'NO' });
+    await h.run(t2.managerId, 'runCallupSelection', { eventId: e2 });
     expect((await openInvites(h, e2)).map((i) => i.user_id)).toEqual([t2.players.CG1.userId]);
   });
 
@@ -214,13 +269,41 @@ describe('Callups (#9–#14)', () => {
     const t = await buildTeam(h, { callups: [['CG1', 'Goalie']] });
     await h.run(t.managerId, 'configureGoalie', { teamId: t.teamId, enabled: false });
     const eventId = await releasedGame(h, t);
-    await everyoneYes(h, t, eventId);
+    await everyoneYes(h, t, eventId, ['G1']);
     await h.run(t.players.G1.userId, 'respondAttendance', { eventId, response: 'NO' });
+    await h.run(t.managerId, 'runCallupSelection', { eventId });
     expect(await openInvites(h, eventId)).toEqual([]);
     // Re-enabling brings Goalie logic back.
     await h.run(t.managerId, 'configureGoalie', { teamId: t.teamId, enabled: true, name: 'Keeper' });
     await h.run(t.managerId, 'runCallupSelection', { eventId });
     expect((await openInvites(h, eventId)).map((i) => i.user_id)).toEqual([t.players.CG1.userId]);
+  });
+
+  it('Managers set a callup to Accepted, Declined or Pending by hand (wireframe 3E)', async () => {
+    const t = await buildTeam(h, { callups: [['CF1', 'Forward']] });
+    const eventId = await releasedGame(h, t);
+    await everyoneYes(h, t, eventId);
+    await h.run(t.players.F1.userId, 'respondAttendance', { eventId, response: 'NO' });
+    await h.run(t.managerId, 'inviteCallups', { eventId, userIds: [t.players.CF1.userId] });
+    await h.run(t.managerId, 'setCallupResponse', { eventId, userId: t.players.CF1.userId, response: 'YES' });
+    expect(await rosterRow(h, eventId, t.players.CF1.userId)).toMatchObject({ response: 'YES', response_origin: 'MANAGER' });
+    expect((await openInvites(h, eventId))[0].response).toBe('YES');
+    await h.run(t.managerId, 'setCallupResponse', { eventId, userId: t.players.CF1.userId, response: 'NO_RESPONSE' });
+    expect((await rosterRow(h, eventId, t.players.CF1.userId)).response).toBe('NO_RESPONSE');
+    expect(await h.fail(t.managerId, 'setCallupResponse', { eventId, userId: t.players.F2.userId, response: 'YES' })).toBe('NOT_A_CALLUP');
+  });
+
+  it('removing a callup from the list tells them they are no longer needed (wireframes 3F, 7)', async () => {
+    const t = await buildTeam(h, { callups: [['CF1', 'Forward']] });
+    const eventId = await releasedGame(h, t);
+    await everyoneYes(h, t, eventId);
+    await h.run(t.players.F1.userId, 'respondAttendance', { eventId, response: 'NO' });
+    await h.run(t.managerId, 'inviteCallups', { eventId, userIds: [t.players.CF1.userId] });
+    await h.run(t.managerId, 'removeEventPlayer', { eventId, userId: t.players.CF1.userId });
+    expect(await openInvites(h, eventId)).toEqual([]);
+    expect(await notificationsFor(h, t.players.CF1.userId, 'CALLUP_NO_LONGER_NEEDED')).toHaveLength(1);
+    // Only players on the callup list can be invited as callups.
+    expect(await h.fail(t.managerId, 'inviteCallups', { eventId, userIds: [t.players.F2.userId] })).toBe('NOT_A_CALLUP');
   });
 });
 
@@ -347,6 +430,66 @@ describe('Availability (#29)', () => {
     // They can still change their mind.
     await h.run(t.players.F1.userId, 'respondAttendance', { eventId, response: 'YES' });
     expect((await rosterRow(h, eventId, t.players.F1.userId)).response).toBe('YES');
+  });
+});
+
+describe('Wireframe extras', () => {
+  it('Events take an optional end time and Home/Away; moving the start keeps the length', async () => {
+    const t = await buildTeam(h);
+    const startsAt = zonedToUtc('2026-10-10', '18:00', TZ);
+    const endsAt = zonedToUtc('2026-10-10', '20:00', TZ);
+    const { eventId } = await h.run(t.managerId, 'createEvent', {
+      teamId: t.teamId,
+      type: 'GAME',
+      opponent: 'Bulldogs',
+      homeAway: 'HOME',
+      startsAt: startsAt.toISOString(),
+      endsAt: endsAt.toISOString(),
+      notifyPlayers: false,
+    });
+    const row = async () => (await h.sql<{ ends_at: Date; home_away: string }[]>`select ends_at, home_away from public.events where id = ${eventId}`)[0];
+    expect(await row()).toEqual({ ends_at: endsAt, home_away: 'HOME' });
+    await h.run(t.managerId, 'updateEvent', { eventId, startsAt: zonedToUtc('2026-10-10', '19:00', TZ).toISOString() });
+    expect((await row()).ends_at).toEqual(zonedToUtc('2026-10-10', '21:00', TZ));
+    expect(
+      await h.fail(t.managerId, 'createEvent', { teamId: t.teamId, type: 'PRACTICE', startsAt: endsAt.toISOString(), endsAt: startsAt.toISOString() }),
+    ).toBe('INVALID_END_TIME');
+
+    const [bulk] = await h.run(t.managerId, 'createEvents', {
+      teamId: t.teamId,
+      type: 'PRACTICE',
+      time: '23:00',
+      endTime: '00:30',
+      dates: ['2026-10-12'],
+      notifyPlayers: false,
+    });
+    const [{ ends_at }] = await h.sql<{ ends_at: Date }[]>`select ends_at from public.events where id = ${bulk.eventId}`;
+    expect(ends_at).toEqual(zonedToUtc('2026-10-13', '00:30', TZ));
+  });
+
+  it('players hear about a new Event unless the Manager turns it off (wireframes 5D, 6A)', async () => {
+    const t = await buildTeam(h);
+    await createGame(h, t, { notifyPlayers: true });
+    expect(await notificationsFor(h, t.players.F1.userId, 'NEW_EVENT')).toEqual([
+      expect.objectContaining({ title: 'New Event', body: expect.stringMatching(/Game vs Sharks .*Civic Arena/) }),
+    ]);
+    await h.run(t.managerId, 'createEvents', { teamId: t.teamId, type: 'PRACTICE', time: '19:00', dates: ['2026-10-12', '2026-10-13'] });
+    const notes = await notificationsFor(h, t.players.F1.userId, 'NEW_EVENT');
+    expect(notes).toHaveLength(2);
+    expect(notes[1].body).toMatch(/and 1 more date/);
+    await h.run(t.managerId, 'updateTeamSettings', { teamId: t.teamId, notifyNewEvents: false });
+    await h.run(t.managerId, 'createEvent', { teamId: t.teamId, type: 'PRACTICE', startsAt: zonedToUtc('2026-10-14', '19:00', TZ).toISOString() });
+    expect(await notificationsFor(h, t.players.F1.userId, 'NEW_EVENT')).toHaveLength(2);
+  });
+
+  it('people can save a phone number and a reason for unavailable dates (wireframes 13, 4a)', async () => {
+    const t = await buildTeam(h);
+    const me = t.players.F1.userId;
+    await h.asUser(me, (tx) => tx`update public.profiles set phone = '555-123-4567' where id = ${me}`);
+    await h.asUser(me, (tx) => tx`insert into public.availability_blocks (start_date, end_date, reason) values ('2026-10-20', '2026-10-22', 'Vacation')`);
+    const [{ phone }] = await h.sql<{ phone: string }[]>`select phone from public.profiles where id = ${me}`;
+    const [{ reason }] = await h.sql<{ reason: string }[]>`select reason from public.availability_blocks where user_id = ${me}`;
+    expect({ phone, reason }).toEqual({ phone: '555-123-4567', reason: 'Vacation' });
   });
 });
 

@@ -33,6 +33,9 @@ export interface TeamRow {
   join_code: string;
   accent_color: string | null;
   logo_path: string | null;
+  include_callups: boolean;
+  callup_spots: number;
+  notify_new_events: boolean;
 }
 
 export async function loadTeam(tx: Tx, teamId: string, lock = false): Promise<TeamRow> {
@@ -112,6 +115,9 @@ export interface EventRow {
   location: string | null;
   notes: string | null;
   starts_at: Date;
+  ends_at: Date | null;
+  home_away: 'HOME' | 'AWAY' | null;
+  callup_spots: number;
   release_state: 'UNSENT' | 'SCHEDULED' | 'RELEASED';
   release_at: Date | null;
   release_action: 'RELEASE' | 'NOTIFY_MANAGER' | null;

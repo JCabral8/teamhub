@@ -5,6 +5,7 @@ import { CallupSettings } from '../../../features/settings/CallupSettings';
 import { DefaultRosterSettings } from '../../../features/settings/DefaultRosterSettings';
 import { GeneralSettings } from '../../../features/settings/GeneralSettings';
 import { MemberSettings } from '../../../features/settings/MemberSettings';
+import { NotificationSettings } from '../../../features/settings/NotificationSettings';
 import { PositionSettings } from '../../../features/settings/PositionSettings';
 import { SETTINGS_SECTIONS, type SectionKey } from '../../../features/settings/sections';
 import { loadTeamDetail } from '../../../lib/data';
@@ -20,6 +21,7 @@ const SECTIONS = {
   roster: DefaultRosterSettings,
   positions: PositionSettings,
   callups: CallupSettings,
+  notifications: NotificationSettings,
   members: MemberSettings,
 } satisfies Record<SectionKey, unknown>;
 

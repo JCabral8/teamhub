@@ -21,7 +21,7 @@ import {
   type RosterRole,
 } from '../domain/index.ts';
 import * as N from '../domain/notifications.ts';
-import { removeFromEvent, settleRoster } from './attendance.ts';
+import { removeFromEvent } from './attendance.ts';
 import { audit, forbidden, notFound, type CommandContext } from './db.ts';
 import {
   attendanceSettings,
@@ -103,6 +103,11 @@ export interface TeamSettingsPatch {
   accentColor?: string | null;
   /** Storage path in the team-logos bucket, under the Team's own folder; null removes the logo. */
   logoPath?: string | null;
+  /** Wireframe 2C: new Events get this many callup spots when includeCallups is on. */
+  includeCallups?: boolean;
+  callupSpots?: number;
+  /** Wireframe 6b Notification Settings: tell the roster when an Event is created. */
+  notifyNewEvents?: boolean;
 }
 
 /**
@@ -132,7 +137,10 @@ export async function updateTeamSettings(ctx: CommandContext, teamId: string, pa
       callup_mode = ${patch.callupMode ?? before.callup_mode},
       callup_selection_method = ${patch.callupSelectionMethod ?? before.callup_selection_method},
       accent_color = ${patch.accentColor !== undefined ? patch.accentColor : before.accent_color},
-      logo_path = ${patch.logoPath !== undefined ? patch.logoPath : before.logo_path}
+      logo_path = ${patch.logoPath !== undefined ? patch.logoPath : before.logo_path},
+      include_callups = ${patch.includeCallups ?? before.include_callups},
+      callup_spots = ${patch.callupSpots ?? before.callup_spots},
+      notify_new_events = ${patch.notifyNewEvents ?? before.notify_new_events}
     where id = ${teamId}
   `;
   const after = await loadTeam(ctx.tx, teamId);
@@ -281,7 +289,6 @@ export async function removeMember(ctx: CommandContext, membershipId: string): P
   `;
   for (const { event_id } of upcoming) {
     await removeFromEvent(ctx.tx, event_id, target.user_id, ctx.now, ctx.actorId);
-    await settleRoster(ctx.tx, event_id, ctx.now, ctx.random, ctx.actorId);
   }
   await audit(ctx.tx, { teamId: target.team_id, actorId: ctx.actorId, action: 'PLAYER_REMOVED', details: { userId: target.user_id } });
 }

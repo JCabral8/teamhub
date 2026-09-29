@@ -2,15 +2,25 @@ import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState, type ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { localDate, sortPositions, zonedToUtc, type EventType } from '../../domain/index.ts';
-import { EventForm, EVENT_TYPE_SELECT, ReleaseDecisionSheet, emptyEventForm, eventFormError, eventFormParams, type EventFormValue } from '../../features/event/EventForm';
+import {
+  EventForm,
+  EVENT_TYPE_SELECT,
+  ReleaseDecisionSheet,
+  emptyEventForm,
+  endInstant,
+  eventFormError,
+  eventFormParams,
+  type EventFormValue,
+} from '../../features/event/EventForm';
 import { api } from '../../lib/api';
-import { loadTeamDetail, type TeamDetail } from '../../lib/data';
+import { loadTeamDetail, type Team, type TeamDetail } from '../../lib/data';
 import { useAction, useLoader } from '../../lib/hooks';
 import { isManagerOf, useTeams } from '../../lib/teams';
 import {
   Button,
   ButtonRow,
   Card,
+  CheckRow,
   DetailLine,
   Empty,
   ErrorText,
@@ -58,8 +68,11 @@ export default function NewEvent() {
   const [dates, setDates] = useState<Set<string>>(new Set());
   const [pickingDate, setPickingDate] = useState(false);
   const [time, setTime] = useState<string | null>(null);
+  const [endTime, setEndTime] = useState<string | null>(null);
   const [useDefaultRoster, setUseDefaultRoster] = useState(true);
   const [custom, setCustom] = useState<Record<string, number>>({});
+  const [customCallupSpots, setCustomCallupSpots] = useState(0);
+  const [notifyPlayers, setNotifyPlayers] = useState<boolean | null>(null);
   const [showDefaults, setShowDefaults] = useState(false);
   const [needDecision, setNeedDecision] = useState<CreateResult[]>([]);
   const [created, setCreated] = useState<CreateResult[]>([]);
@@ -72,6 +85,8 @@ export default function NewEvent() {
   useEffect(() => {
     if (!detail || customFor === teamId) return;
     setCustom(Object.fromEntries(editable.map((p) => [p.id, detail.requirements.find((r) => r.positionId === p.id)?.quantity ?? 0])));
+    const m = managed.find((x) => x.team.id === teamId);
+    setCustomCallupSpots(m?.team.include_callups ? m.team.callup_spots : 0);
     setCustomFor(teamId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail, teamId]);
@@ -81,6 +96,7 @@ export default function NewEvent() {
   const team = membership.team;
   const today = localDate(new Date(), team.timezone);
   const sortedDates = [...dates].sort();
+  const notify = notifyPlayers ?? team.notify_new_events;
 
   const detailsError = (): string | null => {
     const formError = eventFormError(form);
@@ -103,15 +119,24 @@ export default function NewEvent() {
       const e = detailsError();
       if (e) return setError(e);
       const fields = eventFormParams(form, team);
+      const endsAt = mode === 'single' ? endInstant(date!, time!, endTime, team.timezone) : null;
       const results =
         mode === 'single'
-          ? [await api<CreateResult>('createEvent', { teamId, ...fields, startsAt: zonedToUtc(date!, time!, team.timezone).toISOString() })]
-          : await api<CreateResult[]>('createEvents', { teamId, ...fields, time, dates: sortedDates });
+          ? [
+              await api<CreateResult>('createEvent', {
+                teamId,
+                ...fields,
+                startsAt: zonedToUtc(date!, time!, team.timezone).toISOString(),
+                endsAt: endsAt?.toISOString() ?? null,
+                notifyPlayers: notify,
+              }),
+            ]
+          : await api<CreateResult[]>('createEvents', { teamId, ...fields, time, endTime, dates: sortedDates, notifyPlayers: notify });
       if (!useDefaultRoster) {
         const requirements = Object.entries(custom)
           .filter(([, q]) => q > 0)
           .map(([positionId, quantity]) => ({ positionId, quantity }));
-        for (const r of results) await api('setEventRequirements', { eventId: r.eventId, requirements });
+        for (const r of results) await api('setEventRequirements', { eventId: r.eventId, requirements, callupSpots: customCallupSpots });
       }
       setCreated(results);
       const pending = results.filter((r) => r.releaseDecisionRequired);
@@ -131,6 +156,7 @@ export default function NewEvent() {
     setDate(null);
     setDates(new Set());
     setTime(null);
+    setEndTime(null);
     setUseDefaultRoster(true);
     setCreated([]);
     setStep('type');
@@ -228,6 +254,8 @@ export default function NewEvent() {
                 </Card>
               )}
               <TimeField label="Start Time" required value={time} onChange={setTime} hint={`In the Team's time zone (${team.timezone}).`} />
+              <TimeField label="End Time (optional)" value={endTime} onChange={setEndTime} />
+              {endTime ? <Button label="Clear End Time" variant="ghost" size="sm" onPress={() => setEndTime(null)} style={{ alignSelf: 'flex-start' }} /> : null}
             </EventForm>
             <ErrorText error={error} />
           </>
@@ -256,8 +284,9 @@ export default function NewEvent() {
               <ToggleRow label="Or Use Custom Roster Settings" hint="For this Event only." value={!useDefaultRoster} onChange={(v) => setUseDefaultRoster(!v)} />
               {!useDefaultRoster &&
                 editable.map((p) => <StepperRow key={p.id} label={p.name} value={custom[p.id] ?? 0} onChange={(v) => setCustom({ ...custom, [p.id]: v })} />)}
+              {!useDefaultRoster && <StepperRow label="Callup spots" value={customCallupSpots} max={20} onChange={setCustomCallupSpots} />}
             </Card>
-            <DefaultsSheet visible={showDefaults} onClose={() => setShowDefaults(false)} detail={detail ?? null} teamName={team.name} callupMode={team.callup_mode} />
+            <DefaultsSheet visible={showDefaults} onClose={() => setShowDefaults(false)} detail={detail ?? null} team={team} />
           </>
         )}
 
@@ -270,7 +299,7 @@ export default function NewEvent() {
                 <Text style={font.body}>{EVENT_TYPE_STYLE[form.type].label}</Text>
               </View>
               <DetailLine icon="calendar-outline">{whenText}</DetailLine>
-              <DetailLine icon="time-outline">{time ? clock(time) : ''}</DetailLine>
+              <DetailLine icon="time-outline">{time ? `${clock(time)}${endTime ? ` – ${clock(endTime)}` : ''}` : ''}</DetailLine>
               {eventFormParams(form, team).location ? <DetailLine icon="location-outline">{eventFormParams(form, team).location}</DetailLine> : null}
               <View style={styles.notes}>
                 <Text style={font.label}>Notes</Text>
@@ -280,6 +309,11 @@ export default function NewEvent() {
             <Card>
               <Text style={font.heading}>Roster Settings</Text>
               <DetailLine icon={useDefaultRoster ? 'checkmark-circle' : 'options'}>{useDefaultRoster ? 'Use Default Settings' : 'Custom settings for this Event'}</DetailLine>
+            </Card>
+            <Card>
+              <Text style={font.heading}>Notifications</Text>
+              <CheckRow first title="Notify players after creation" checked={notify} onPress={() => setNotifyPlayers(!notify)} />
+              <Notice tone="primary">Players get a "New Event" notification. The attendance request follows your Team's attendance settings.</Notice>
             </Card>
             <Notice tone="primary" title="Attendance">
               {team.attendance_mode === 'AUTOMATIC'
@@ -297,6 +331,7 @@ export default function NewEvent() {
               body={created.length > 1 ? `${title} has been added to ${created.length} dates.` : `${title} has been created.`}
             />
             {created.length === 1 && <Button label="View Event" onPress={() => router.replace({ pathname: '/event/[id]', params: { id: created[0].eventId } })} />}
+            <Button label="Add to Calendar" icon="calendar-outline" variant="secondary" onPress={() => router.push('/profile')} />
             <Button label="View Team Schedule" variant="secondary" onPress={() => router.replace('/schedule')} />
             <Button label="Create Another Event" variant="secondary" onPress={restart} />
           </>
@@ -308,23 +343,23 @@ export default function NewEvent() {
   );
 }
 
-/** "Roster Settings Summary": what the Team defaults would apply. */
-function DefaultsSheet({ visible, onClose, detail, teamName, callupMode }: { visible: boolean; onClose: () => void; detail: TeamDetail | null; teamName: string; callupMode: string }) {
+/** "Roster Settings Summary" (wireframe 5): what the Team defaults would apply. */
+function DefaultsSheet({ visible, onClose, detail, team }: { visible: boolean; onClose: () => void; detail: TeamDetail | null; team: Team }) {
   const positions = detail ? sortPositions(detail.positions) : [];
+  const required = detail?.requirements.filter((r) => r.quantity > 0) ?? [];
+  const value = (text: string) => <Text style={font.body}>{text}</Text>;
   return (
-    <Sheet visible={visible} onClose={onClose} title={`${teamName} – Default Settings`}>
-      {detail?.requirements.length ? (
-        <View>
-          {detail.requirements
-            .filter((r) => r.quantity > 0)
-            .map((r, i) => (
-              <ListRow key={r.positionId} first={i === 0} title={positions.find((p) => p.id === r.positionId)?.name ?? 'Position'} right={<Text style={font.body}>{r.quantity}</Text>} />
-            ))}
-          <ListRow title="Callup system" right={<Text style={font.body}>{callupMode === 'BASIC' ? 'Basic' : 'Advanced'}</Text>} />
-        </View>
-      ) : (
-        <Text style={font.small}>No Position requirements set: everyone who says Yes attends.</Text>
-      )}
+    <Sheet visible={visible} onClose={onClose} title={`${team.name} – Default Settings`}>
+      <View>
+        {required.length ? (
+          required.map((r, i) => <ListRow key={r.positionId} first={i === 0} title={positions.find((p) => p.id === r.positionId)?.name ?? 'Position'} right={value(String(r.quantity))} />)
+        ) : (
+          <ListRow first title="Positions" right={value('No limits')} />
+        )}
+        <ListRow title="Include Callups" right={value(team.include_callups ? 'Enabled' : 'Disabled')} />
+        <ListRow title="Callup Spots" right={value(team.include_callups && team.callup_spots ? String(team.callup_spots) : 'As needed')} />
+        <ListRow title="Callup Mode" right={value(team.callup_selection_method === 'RANDOMIZED_ROTATION' ? 'Randomized' : 'Listed Order')} />
+      </View>
     </Sheet>
   );
 }

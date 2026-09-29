@@ -1,9 +1,8 @@
 import type { EventType } from './types.ts';
 
 /**
- * Notification content (spec §55). Callup invitations use exactly the same type and wording as any
- * other Event invitation (spec §46): nothing in a player's notification reveals a callup, its ranking,
- * or the Position it targets.
+ * Notification content (spec §55, and the "Notification Examples" in wireframes 6 and 7). A callup is
+ * told it's a callup invitation; nothing reveals their ranking or pool.
  */
 
 export type NotificationType =
@@ -19,7 +18,12 @@ export type NotificationType =
   | 'EVENT_TIME_CHANGED'
   | 'MEMBERSHIP_REQUEST'
   | 'MANAGER_SUCCESSION'
-  | 'ATTENDANCE_REMINDER';
+  | 'ATTENDANCE_REMINDER'
+  | 'CALLUP_INVITATION'
+  | 'CALLUP_CONFIRMED'
+  | 'CALLUP_NO_LONGER_NEEDED'
+  | 'NOT_SELECTED'
+  | 'NEW_EVENT';
 
 export interface NotificationContent {
   type: NotificationType;
@@ -63,7 +67,7 @@ export function formatEventTime(startsAt: Date, timezone: string): string {
 
 const heading = (e: EventSummary) => `${eventLabel(e)} · ${formatEventTime(e.startsAt, e.timezone)}`;
 
-/** The one invitation every invitee receives, regular roster and callups alike. */
+/** The attendance request default-roster players receive. */
 export function eventInvitation(e: EventSummary): NotificationContent {
   return { type: 'EVENT_INVITATION', title: heading(e), body: 'Are you attending? Tap to respond.' };
 }
@@ -84,7 +88,7 @@ export function attendanceDiscrepancy(e: EventSummary, playerName: string): Noti
   return {
     type: 'ATTENDANCE_DISCREPANCY',
     title: 'Roster discrepancy',
-    body: `${playerName} wants to attend ${heading(e)} but the roster is full. They are pending approval.`,
+    body: `${playerName} wants to attend ${heading(e)} but the roster is full. Approve or decline them on the Event roster.`,
   };
 }
 
@@ -92,12 +96,36 @@ export function pendingApproval(e: EventSummary): NotificationContent {
   return {
     type: 'PENDING_APPROVAL',
     title: heading(e),
-    body: 'The roster is full, so you are pending approval. You will be added automatically if a spot opens.',
+    body: "The roster is full, so you're on the waitlist. You'll be notified if a spot becomes available.",
   };
 }
 
 export function rosterSpotConfirmed(e: EventSummary): NotificationContent {
-  return { type: 'ROSTER_SPOT_CONFIRMED', title: heading(e), body: 'A spot opened up. You are on the roster.' };
+  return { type: 'ROSTER_SPOT_CONFIRMED', title: "You're In!", body: `A spot became available and you've been added to the roster for ${heading(e)}.` };
+}
+
+export function notSelected(e: EventSummary): NotificationContent {
+  return { type: 'NOT_SELECTED', title: 'Not Selected', body: `A spot did not become available for ${heading(e)}. Your status is Not Attending.` };
+}
+
+export function callupInvitation(e: EventSummary): NotificationContent {
+  return { type: 'CALLUP_INVITATION', title: 'Callup Opportunity', body: `You've been invited as a callup for ${heading(e)}. Tap to respond.` };
+}
+
+export function callupConfirmed(e: EventSummary): NotificationContent {
+  return { type: 'CALLUP_CONFIRMED', title: 'Callup Confirmed', body: `You've been added as a callup for ${heading(e)}.` };
+}
+
+export function callupNoLongerNeeded(e: EventSummary): NotificationContent {
+  return {
+    type: 'CALLUP_NO_LONGER_NEEDED',
+    title: 'Callup No Longer Needed',
+    body: `The callup opportunity for ${heading(e)} has been filled. Thanks for being available!`,
+  };
+}
+
+export function newEvent(e: EventSummary, location: string | null): NotificationContent {
+  return { type: 'NEW_EVENT', title: 'New Event', body: [heading(e), location].filter(Boolean).join(' · ') };
 }
 
 export function callupAccepted(e: EventSummary, playerName: string): NotificationContent {

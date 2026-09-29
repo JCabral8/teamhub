@@ -72,6 +72,8 @@ function AuthGate() {
       <Stack.Screen name="event/[id]/callups" options={{ title: 'Callups' }} />
       <Stack.Screen name="event/[id]/schedule-attendance" options={{ title: 'Schedule Attendance' }} />
       <Stack.Screen name="event/[id]/roster-settings" options={{ title: 'Event Roster Settings' }} />
+      <Stack.Screen name="event/[id]/invite-callups" options={{ title: 'Invite Callups' }} />
+      <Stack.Screen name="event/[id]/player/[userId]" options={{ title: 'Player' }} />
       <Stack.Screen name="event/new" options={{ title: 'Create Event' }} />
       <Stack.Screen name="event/edit" options={{ title: 'Edit Event' }} />
       <Stack.Screen name="team/new" options={{ title: 'Create Team' }} />

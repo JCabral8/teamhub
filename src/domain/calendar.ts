@@ -12,6 +12,8 @@ export interface CalendarEvent {
   location: string | null;
   notes: string | null;
   startsAt: Date;
+  /** Optional end time; without one the calendar shows CALENDAR_EVENT_MINUTES. */
+  endsAt?: Date | null;
   updatedAt: Date;
   /** The person's own answer, or null when they aren't on this Event's roster. */
   response: AttendanceResponse | null;
@@ -19,10 +21,10 @@ export interface CalendarEvent {
   url: string;
 }
 
-/** Events have no end time in TeamHub; calendars show each one as this long. */
+/** How long an Event without an end time shows in calendars. */
 export const CALENDAR_EVENT_MINUTES = 90;
 
-const ANSWERS: Record<AttendanceResponse, string> = { YES: 'Attending', NO: 'Not attending', NO_RESPONSE: 'No answer yet' };
+const ANSWERS: Record<AttendanceResponse, string> = { YES: 'Attending', NO: 'Not attending', MAYBE: 'Maybe', NO_RESPONSE: 'No answer yet' };
 
 /** 20260925T233000Z */
 function utc(d: Date): string {
@@ -71,7 +73,7 @@ export function buildCalendar(events: CalendarEvent[], opts: { now: Date; showTe
     'X-PUBLISHED-TTL:PT1H',
   ];
   for (const e of events) {
-    const title = `${opts.showTeam ? `${e.teamName}: ` : ''}${eventLabel(e)}${e.response === 'NO' ? ' (Not attending)' : ''}`;
+    const title = `${opts.showTeam ? `${e.teamName}: ` : ''}${eventLabel(e)}${e.response === 'NO' ? ' (Not attending)' : e.response === 'MAYBE' ? ' (Maybe)' : ''}`;
     const description = [
       e.teamName,
       e.response ? `Your answer: ${ANSWERS[e.response]}` : null,
@@ -88,7 +90,7 @@ export function buildCalendar(events: CalendarEvent[], opts: { now: Date; showTe
       // Later edits need a higher number so calendars replace their copy.
       `SEQUENCE:${Math.floor(e.updatedAt.getTime() / 1000)}`,
       `DTSTART:${utc(e.startsAt)}`,
-      `DTEND:${utc(new Date(e.startsAt.getTime() + CALENDAR_EVENT_MINUTES * 60_000))}`,
+      `DTEND:${utc(e.endsAt ?? new Date(e.startsAt.getTime() + CALENDAR_EVENT_MINUTES * 60_000))}`,
       `SUMMARY:${escapeText(title)}`,
       ...(e.location?.trim() ? [`LOCATION:${escapeText(e.location.trim())}`] : []),
       `DESCRIPTION:${escapeText(description)}`,

@@ -1,5 +1,5 @@
 import { isActiveGoalie, underlyingPositionIds } from './positions.ts';
-import { SKATER_SLOT, assignToSlots, buildSlotModel, entrySlots, isAttending, type RosterContext } from './roster.ts';
+import { CALLUP_SLOT, SKATER_SLOT, assignToSlots, buildSlotModel, eligibleSlots, isAttending, rosterCandidate, slotsWithCallupSpots, type RosterContext } from './roster.ts';
 import type { CallupMode, CallupSelectionMethod, EventRosterEntry, PositionConfig } from './types.ts';
 
 /**
@@ -52,6 +52,9 @@ export function buildCallupPools(
   return pools;
 }
 
+/** Need key for the Event's extra callup spots. */
+export const CALLUP_SPOTS = CALLUP_SLOT;
+
 export interface CallupNeed {
   slotKey: string;
   /** Position the need is for; null for the pooled BASIC skater slot. */
@@ -63,17 +66,23 @@ export interface CallupNeed {
 /**
  * Open roster vacancies that callups should fill. Players still expected (confirmed YES, default-roster
  * players yet to answer, open callup invitations) count as filling a slot; pending players do not.
- * There is no fixed callup count per Event: needs exist only when requirements create them (spec §50).
+ * Needs come from the Position requirements plus any callup spots the Event has (wireframe 2).
  */
 export function calculateCallupNeeds(roster: EventRosterEntry[], ctx: RosterContext): CallupNeed[] {
   const model = buildSlotModel(ctx.requirements, ctx.config, ctx.mode);
-  if (model.unlimited) return [];
-  const expected = roster
-    .filter((e) => isAttending(e) || e.response === 'NO_RESPONSE')
-    .map((e) => ({ id: e.userId, eligible: entrySlots(e, model, ctx.config, ctx.mode, ctx.callupTargets) }));
-  const { assignment } = assignToSlots(expected, model.slots);
+  const callupSpots = ctx.callupSpots ?? 0;
+  // Still expected: attending, not answered yet, or Maybe. A callup only replaces a definite No.
+  const expected = roster.filter((e) => isAttending(e) || e.response === 'NO_RESPONSE' || e.response === 'MAYBE');
   const needs: CallupNeed[] = [];
-  for (const slot of model.slots) {
+  if (model.unlimited) {
+    // No Position limits: callup spots are simply filled by callups.
+    const callups = expected.filter((e) => e.source === 'CALLUP').length;
+    if (callupSpots > callups) needs.push({ slotKey: CALLUP_SPOTS, positionId: null, isGoalie: false, count: callupSpots - callups });
+    return needs;
+  }
+  const slots = slotsWithCallupSpots(model, ctx);
+  const { assignment } = assignToSlots(expected.map((e) => rosterCandidate(e, model, ctx)), slots);
+  for (const slot of slots) {
     const filled = [...assignment.values()].filter((k) => k === slot.key).length;
     if (filled < slot.capacity) {
       needs.push({ slotKey: slot.key, positionId: slot.positionId, isGoalie: slot.isGoalie, count: slot.capacity - filled });
@@ -119,8 +128,9 @@ function poolSearchOrder(need: CallupNeed, config: PositionConfig, mode: CallupM
     .filter((p) => p.kind === 'BASE')
     .sort((a, b) => a.sortOrder - b.sortOrder)
     .map((p) => p.id);
+  if (!need.positionId) return [...bases, SKATER_SLOT];
   const others = bases.filter((id) => id !== need.positionId);
-  return [need.positionId!, ...others, SKATER_SLOT];
+  return [need.positionId, ...others, SKATER_SLOT];
 }
 
 /**
@@ -166,4 +176,27 @@ export function processCallupSelection(input: CallupSelectionInput): CallupSelec
     }
   }
   return selections;
+}
+
+/**
+ * Targets for callups a Manager picked by hand (wireframes 3B, 8D): each one takes an open need they
+ * fit, else any open skater need, so their Yes lands in a real spot. A Goalie need only takes a Goalie.
+ * Returns userId → target Position (null = callup spot or any skater spot).
+ */
+export function assignInviteTargets(invitees: CallupMember[], roster: EventRosterEntry[], ctx: RosterContext): Map<string, string | null> {
+  const needs = calculateCallupNeeds(roster, ctx).map((n) => ({ ...n }));
+  const model = buildSlotModel(ctx.requirements, ctx.config, ctx.mode);
+  const targets = new Map<string, string | null>();
+  for (const m of invitees) {
+    const goalie = isActiveGoalie(m.positionId, ctx.config);
+    const natural = new Set(eligibleSlots(m.positionId, model, ctx.config, ctx.mode));
+    const open = needs.filter((n) => n.count > 0);
+    const need =
+      open.find((n) => n.slotKey !== CALLUP_SPOTS && natural.has(n.slotKey)) ??
+      open.find((n) => n.slotKey === CALLUP_SPOTS) ??
+      open.find((n) => !n.isGoalie && !goalie);
+    if (need) need.count--;
+    targets.set(m.userId, need && need.slotKey !== CALLUP_SPOTS ? need.positionId : null);
+  }
+  return targets;
 }

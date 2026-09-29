@@ -1,9 +1,9 @@
 // Event fields shared by create and edit (spec §12, §13; wireframe 5B "Enter Event Details").
 import { useState, type ReactNode } from 'react';
 import { Text, View } from 'react-native';
-import type { EventType } from '../../domain/index.ts';
+import { addDays, zonedToUtc, type EventType } from '../../domain/index.ts';
 import type { Team } from '../../lib/data';
-import { Button, Dialog, Field, Select } from '../../ui/components';
+import { Button, Dialog, Field, FieldLabel, Segmented, Select } from '../../ui/components';
 import { EVENT_TYPE_STYLE, EventTypeIcon } from '../../ui/EventTypeIcon';
 import { EVENT_TYPE_OPTIONS } from '../../ui/format';
 import { font, space } from '../../ui/theme';
@@ -15,6 +15,7 @@ export interface EventFormValue {
   /** null means the Team default location. */
   customLocation: string | null;
   notes: string;
+  homeAway: 'HOME' | 'AWAY' | null;
 }
 
 export const NAME_MAX = 80;
@@ -23,7 +24,7 @@ export const NOTES_MAX = 1000;
 export const teamDefaultLocation = (team: Team) => team.default_location ?? team.arena ?? null;
 
 export function emptyEventForm(type: EventType = 'GAME'): EventFormValue {
-  return { type, name: '', opponent: '', customLocation: null, notes: '' };
+  return { type, name: '', opponent: '', customLocation: null, notes: '', homeAway: null };
 }
 
 export const hasOpponent = (type: EventType) => type === 'GAME' || type === 'TOURNAMENT';
@@ -35,7 +36,14 @@ export function eventFormParams(v: EventFormValue, team: Team) {
     opponent: hasOpponent(v.type) ? v.opponent.trim() || null : null,
     location: v.customLocation !== null ? v.customLocation.trim() || null : teamDefaultLocation(team),
     notes: v.notes.trim() || null,
+    homeAway: hasOpponent(v.type) ? v.homeAway : null,
   };
+}
+
+/** The end instant for an optional HH:MM end time on the start date, past midnight if it's earlier. */
+export function endInstant(date: string, start: string, end: string | null, timezone: string): Date | null {
+  if (!end) return null;
+  return zonedToUtc(end > start ? date : addDays(date, 1), end, timezone);
 }
 
 export function eventFormError(v: EventFormValue): string | null {
@@ -67,6 +75,20 @@ export function EventForm({ value, onChange, team, children }: { value: EventFor
         placeholder={value.type === 'TOURNAMENT' ? 'Spring Classic' : value.type === 'CUSTOM' ? 'Team BBQ' : 'Optional'}
       />
       {hasOpponent(value.type) && <Field label="Opponent" value={value.opponent} onChangeText={(opponent) => set({ opponent })} maxLength={80} placeholder="Bulldogs" />}
+      {hasOpponent(value.type) && (
+        <View style={{ gap: 6 }}>
+          <FieldLabel label="Home or Away" />
+          <Segmented
+            options={[
+              { value: 'HOME', label: 'Home' },
+              { value: 'AWAY', label: 'Away' },
+              { value: 'NONE', label: 'Not set' },
+            ]}
+            value={value.homeAway ?? 'NONE'}
+            onChange={(v) => set({ homeAway: v === 'NONE' ? null : v })}
+          />
+        </View>
+      )}
       {children}
       <Field
         label="Location"

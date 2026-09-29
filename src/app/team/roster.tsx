@@ -37,11 +37,15 @@ export default function DefaultRoster() {
     >
       <ErrorText error={error} />
       <Card>
-        <Text style={font.heading}>{team.name}</Text>
-        <Text style={font.body}>
-          Total: {players.length + callups.length} ({players.length} {players.length === 1 ? 'Player' : 'Players'} + {callups.length}{' '}
-          {callups.length === 1 ? 'Callup' : 'Callups'})
-        </Text>
+        <Text style={font.heading}>Roster Summary</Text>
+        {team.include_callups && team.callup_spots > 0 ? (
+          <Text style={font.body}>
+            {`Total: ${players.length + team.callup_spots} (${players.length} ${players.length === 1 ? 'Player' : 'Players'} + ${team.callup_spots} ${team.callup_spots === 1 ? 'Callup' : 'Callups'})`}
+          </Text>
+        ) : (
+          <Text style={font.body}>{`Total: ${players.length} ${players.length === 1 ? 'Player' : 'Players'}`}</Text>
+        )}
+        <Text style={font.small}>{`${callups.length} on the callup list`}</Text>
       </Card>
 
       {manager && totalRequired > 0 && players.length < totalRequired && (

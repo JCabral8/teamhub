@@ -24,8 +24,8 @@ export default function MyStats() {
   if (!teams.active.length) return <Empty title="No stats yet" body="Stats appear once you're on a Team." />;
 
   const mine = data?.find((r) => r.userId === userId);
-  const r = mine?.regular ?? { invitations: 0, yes: 0, no: 0, noResponse: 0 };
-  const c = mine?.callup ?? { invitations: 0, accepted: 0, declined: 0, noResponse: 0 };
+  const r = mine?.regular ?? { invitations: 0, yes: 0, no: 0, maybe: 0, noResponse: 0 };
+  const c = mine?.callup ?? { invitations: 0, accepted: 0, declined: 0, maybe: 0, noResponse: 0 };
 
   return (
     <Screen>
@@ -43,11 +43,12 @@ export default function MyStats() {
               ['Events invited', String(r.invitations)],
               ['Yes', String(r.yes)],
               ['No', String(r.no)],
+              ['Maybe', String(r.maybe)],
               ['No Response', String(r.noResponse)],
             ]}
             rates={[
               ['Attendance Rate', pct(r.yes, r.invitations)],
-              ['Response Rate', pct(r.yes + r.no, r.invitations)],
+              ['Response Rate', pct(r.yes + r.no + r.maybe, r.invitations)],
             ]}
           />
           <StatCard
@@ -56,11 +57,12 @@ export default function MyStats() {
               ['Invitations', String(c.invitations)],
               ['Accepted', String(c.accepted)],
               ['Declined', String(c.declined)],
+              ['Maybe', String(c.maybe)],
               ['No Response', String(c.noResponse)],
             ]}
             rates={[
               ['Acceptance Rate', pct(c.accepted, c.invitations)],
-              ['Response Rate', pct(c.accepted + c.declined, c.invitations)],
+              ['Response Rate', pct(c.accepted + c.declined + c.maybe, c.invitations)],
             ]}
           />
           <Text style={font.small}>Counts Events where attendance was sent to you.</Text>

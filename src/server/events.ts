@@ -1,7 +1,9 @@
 // EventService: Event creation (single and bulk), editing and the roster snapshot (spec §11–§14, §21, §29, §30).
 import {
   DomainError,
+  addDays,
   computeDefaultReleaseAt,
+  localDate,
   handleEventChange,
   planInitialRelease,
   resetForNewRelease,
@@ -22,10 +24,23 @@ export interface EventFields {
   location: string | null;
   notes: string | null;
   startsAt: Date;
+  /** Optional end (wireframe 5B "End Time (optional)"). */
+  endsAt: Date | null;
+  /** Home or away game (the "Home" tag in wireframes 1 and 9). */
+  homeAway: 'HOME' | 'AWAY' | null;
 }
 
 function validateFields(f: EventFields): void {
   if (f.type === 'CUSTOM' && !f.name) throw new DomainError('CUSTOM_EVENT_NAME_REQUIRED', 'Enter a name for the Custom Event.');
+  if (f.endsAt && f.endsAt <= f.startsAt) throw new DomainError('INVALID_END_TIME', 'The end time must be after the start time.');
+}
+
+/** An end time given as HH:MM on the start date, rolling past midnight if it's earlier than the start. */
+export function endOnStartDay(startsAt: Date, endTime: string | null, timezone: string): Date | null {
+  if (!endTime) return null;
+  const startDate = localDate(startsAt, timezone);
+  const end = zonedToUtc(startDate, endTime, timezone);
+  return end > startsAt ? end : zonedToUtc(addDays(startDate, 1), endTime, timezone);
 }
 
 function planColumns(plan: InitialReleasePlan) {
@@ -39,9 +54,11 @@ async function insertEvent(tx: Tx, team: TeamRow, f: EventFields, actorId: strin
   const plan = planInitialRelease(f.startsAt, attendanceSettings(team), now);
   const cols = planColumns(plan);
   const [event] = await tx<{ id: string }[]>`
-    insert into public.events (team_id, type, name, opponent, location, notes, starts_at, created_by, release_state, release_at, release_action)
+    insert into public.events (team_id, type, name, opponent, location, notes, starts_at, ends_at, home_away, callup_spots,
+                               created_by, release_state, release_at, release_action)
     values (${team.id}, ${f.type}, ${f.name}, ${f.opponent}, ${f.location ?? team.default_location ?? team.arena}, ${f.notes},
-            ${f.startsAt}, ${actorId}, ${cols.release_state}, ${cols.release_at}, ${cols.release_action})
+            ${f.startsAt}, ${f.endsAt}, ${f.homeAway}, ${team.include_callups ? team.callup_spots : 0},
+            ${actorId}, ${cols.release_state}, ${cols.release_at}, ${cols.release_action})
     returning id
   `;
   // Event Roster Snapshot: requirement quantities, default-roster players and their Positions (spec §21).
@@ -65,27 +82,53 @@ async function insertEvent(tx: Tx, team: TeamRow, f: EventFields, actorId: strin
   return { eventId: event.id, releaseDecisionRequired: plan.kind === 'ASK_MANAGER' };
 }
 
-/** Create one Event. If the normal release time has passed the Manager must choose SEND NOW or HOLD OFF. */
-export async function createEvent(ctx: CommandContext, teamId: string, fields: EventFields) {
+/** Tells the default-roster players about a new Event (wireframe 6A "New Event"). */
+async function announce(tx: Tx, team: TeamRow, eventId: string, f: EventFields, extraDates: number) {
+  const players = await tx<{ user_id: string }[]>`
+    select user_id from public.event_roster_players where event_id = ${eventId} and removed_at is null
+  `;
+  const summary = { type: f.type, name: f.name, opponent: f.opponent, startsAt: f.startsAt, timezone: team.timezone };
+  const content = N.newEvent(summary, f.location ?? team.default_location ?? team.arena);
+  if (extraDates > 0) content.body += ` (and ${extraDates} more ${extraDates === 1 ? 'date' : 'dates'})`;
+  await notify(tx, toMany(players.map((p) => p.user_id), team.id, eventId, content));
+}
+
+/**
+ * Create one Event. If the normal release time has passed the Manager must choose SEND NOW or HOLD OFF.
+ * `notifyPlayers` defaults to the Team's Notification Settings.
+ */
+export async function createEvent(ctx: CommandContext, teamId: string, fields: EventFields, notifyPlayers?: boolean) {
   const team = await loadTeam(ctx.tx, teamId, true);
   await requireManager(ctx.tx, teamId, ctx.actorId);
-  return insertEvent(ctx.tx, team, fields, ctx.actorId, ctx.now);
+  const result = await insertEvent(ctx.tx, team, fields, ctx.actorId, ctx.now);
+  if (notifyPlayers ?? team.notify_new_events) await announce(ctx.tx, team, result.eventId, fields, 0);
+  return result;
 }
 
 /** Calendar-based bulk creation (spec §14): the same Event details on each selected date. */
 export async function createEvents(
   ctx: CommandContext,
   teamId: string,
-  template: Omit<EventFields, 'startsAt'>,
+  template: Omit<EventFields, 'startsAt' | 'endsAt'>,
   time: string,
   dates: string[],
+  endTime: string | null = null,
+  notifyPlayers?: boolean,
 ) {
   if (!dates.length || dates.length > 200) throw new DomainError('INVALID_INPUT', 'Choose between 1 and 200 dates.');
   const team = await loadTeam(ctx.tx, teamId, true);
   await requireManager(ctx.tx, teamId, ctx.actorId);
   const results = [];
-  for (const date of [...new Set(dates)].sort()) {
-    results.push({ date, ...(await insertEvent(ctx.tx, team, { ...template, startsAt: zonedToUtc(date, time, team.timezone) }, ctx.actorId, ctx.now)) });
+  const sorted = [...new Set(dates)].sort();
+  for (const date of sorted) {
+    const startsAt = zonedToUtc(date, time, team.timezone);
+    const fields = { ...template, startsAt, endsAt: endOnStartDay(startsAt, endTime, team.timezone) };
+    results.push({ date, ...(await insertEvent(ctx.tx, team, fields, ctx.actorId, ctx.now)) });
+  }
+  // One announcement for the whole set, on the first Event, rather than one per date.
+  if ((notifyPlayers ?? team.notify_new_events) && results.length) {
+    const startsAt = zonedToUtc(sorted[0], time, team.timezone);
+    await announce(ctx.tx, team, results[0].eventId, { ...template, startsAt, endsAt: null }, results.length - 1);
   }
   return results;
 }
@@ -105,6 +148,14 @@ export async function updateEvent(ctx: CommandContext, eventId: string, patch: P
     location: patch.location !== undefined ? patch.location : before.location,
     notes: patch.notes !== undefined ? patch.notes : before.notes,
     startsAt: patch.startsAt ?? before.starts_at,
+    // Moving the start without a new end keeps the Event the same length.
+    endsAt:
+      patch.endsAt !== undefined
+        ? patch.endsAt
+        : before.ends_at && patch.startsAt
+          ? new Date(before.ends_at.getTime() + (patch.startsAt.getTime() - before.starts_at.getTime()))
+          : before.ends_at,
+    homeAway: patch.homeAway !== undefined ? patch.homeAway : before.home_away,
   };
   validateFields(next);
   const released = before.release_state === 'RELEASED';
@@ -112,7 +163,8 @@ export async function updateEvent(ctx: CommandContext, eventId: string, patch: P
 
   await ctx.tx`
     update public.events set type = ${next.type}, name = ${next.name}, opponent = ${next.opponent},
-      location = ${next.location}, notes = ${next.notes}, starts_at = ${next.startsAt}
+      location = ${next.location}, notes = ${next.notes}, starts_at = ${next.startsAt},
+      ends_at = ${next.endsAt}, home_away = ${next.homeAway}
     where id = ${eventId}
   `;
 

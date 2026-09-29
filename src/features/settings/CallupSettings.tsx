@@ -57,8 +57,8 @@ export function CallupSettings({ membership, detail, reload }: SectionProps) {
         />
         <Text style={font.small}>
           {method === 'RANDOMIZED_ROTATION'
-            ? 'Picks at random among the callups who have played the fewest times, so turns even out.'
-            : 'Asks callups in the order you set below.'}
+            ? 'Suggests callups at random among those who have played the fewest times, so turns even out. You choose who to invite.'
+            : 'Suggests callups in the order you set below. You choose who to invite.'}
         </Text>
       </Card>
       <ErrorText error={error} />

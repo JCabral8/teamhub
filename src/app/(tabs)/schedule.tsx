@@ -3,7 +3,16 @@ import { useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { addDays, localDate } from '../../domain/index.ts';
 import { useAuth } from '../../lib/auth';
-import { clearUnavailable, loadAvailability, loadEvents, loadMyRosterLines, type MyRosterLine, type TeamEvent } from '../../lib/data';
+import {
+  clearUnavailable,
+  loadAvailability,
+  loadEvents,
+  loadMyCallups,
+  loadMyRosterLines,
+  type MyCallup,
+  type MyRosterLine,
+  type TeamEvent,
+} from '../../lib/data';
 import { useAction, useLoader } from '../../lib/hooks';
 import { isManagerOf, useTeams } from '../../lib/teams';
 import { Button, Card, Empty, ErrorText, Loading, Notice, Screen, Select, TabBar } from '../../ui/components';
@@ -29,10 +38,10 @@ export default function Schedule() {
 
   const teamIds = teams.active.map((m) => m.team.id);
   const { data, error, loading, reload } = useLoader(async () => {
-    if (!userId) return { events: [] as TeamEvent[], lines: new Map<string, MyRosterLine>(), blocks: [] };
+    if (!userId) return { events: [] as TeamEvent[], lines: new Map<string, MyRosterLine>(), blocks: [], callups: new Map<string, MyCallup>() };
     const events = await loadEvents(teamIds, { from: new Date(Date.now() - 120 * 86_400_000) });
-    const [lines, blocks] = await Promise.all([loadMyRosterLines(userId, events.map((e) => e.id)), loadAvailability()]);
-    return { events, lines, blocks };
+    const [lines, blocks, callups] = await Promise.all([loadMyRosterLines(userId, events.map((e) => e.id)), loadAvailability(), loadMyCallups()]);
+    return { events, lines, blocks, callups };
   }, [teamIds.join(','), userId]);
 
   const teamById = useMemo(() => new Map(teams.active.map((m) => [m.team.id, m])), [teams.active]);
@@ -78,6 +87,7 @@ export default function Schedule() {
         showTeam={multiTeam && teamFilter === 'ALL'}
         accentColor={multiTeam ? m.team.accent_color : undefined}
         myLine={data?.lines.get(e.id)}
+        myCallup={data?.callups.get(e.id)}
         onPress={() => router.push({ pathname: '/event/[id]', params: { id: e.id } })}
       />
     );
@@ -171,9 +181,10 @@ export default function Schedule() {
   );
 }
 
-function blockText(b: { start_date: string; end_date: string } | undefined): string {
+function blockText(b: { start_date: string; end_date: string; reason: string | null } | undefined): string {
   if (!b) return '';
-  return b.start_date === b.end_date ? `${shortDate(b.start_date, false)}.` : `${shortDate(b.start_date, false)} – ${shortDate(b.end_date, false)}.`;
+  const when = b.start_date === b.end_date ? shortDate(b.start_date, false) : `${shortDate(b.start_date, false)} – ${shortDate(b.end_date, false)}`;
+  return `${when}${b.reason ? ` · ${b.reason}` : ''}.`;
 }
 
 const styles = StyleSheet.create({

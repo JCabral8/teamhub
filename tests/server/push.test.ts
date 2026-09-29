@@ -43,10 +43,10 @@ describe('push delivery', () => {
     expect(f1).toHaveLength(2);
     expect(f1[0]).toMatchObject({ body: 'Are you attending? Tap to respond.', data: { eventId, type: 'EVENT_INVITATION' } });
 
-    // The callup's push is the same invitation a roster player gets (spec §46).
+    // The callup's push is a callup invitation (wireframe 7A).
     const c1 = r.sent.filter((m) => m.to.includes('c1'));
     expect(c1).toHaveLength(1);
-    expect({ title: c1[0].title, body: c1[0].body, type: c1[0].data.type }).toEqual({ title: f1[0].title, body: f1[0].body, type: f1[0].data.type });
+    expect({ title: c1[0].title, type: c1[0].data.type }).toEqual({ title: 'Callup Opportunity', type: 'CALLUP_INVITATION' });
 
     const again = recorder();
     expect(await deliverPendingPush(h.sql, again.send, h.now)).toBe(0);

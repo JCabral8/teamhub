@@ -1,6 +1,4 @@
 // Spec §61 scenarios 15–18, 30–32 and 36–40: Positions, membership, permissions, visibility and invariants.
-import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { handleApi, handleCalendar } from '../../src/server/http.ts';
 import {
@@ -114,11 +112,13 @@ describe('Membership (#18, #30–#32)', () => {
     await h.run(t.managerId, 'removeMember', { membershipId: t.players.F1.membershipId });
     expect((await rosterRow(h, past, t.players.F1.userId)).removed_at).toBeNull();
     expect((await rosterRow(h, upcoming, t.players.F1.userId)).removed_at).not.toBeNull();
-    const invited = await h.sql`select user_id from public.callup_invitations where event_id = ${upcoming}`;
-    expect(invited.map((r) => r.user_id)).toEqual([t.players.CF1.userId]);
+    // The open spot is offered to the Manager as a callup suggestion; nothing is invited on its own.
+    expect(await h.sql`select user_id from public.callup_invitations where event_id = ${upcoming}`).toEqual([]);
+    const plan = await h.run(t.managerId, 'getCallupCandidates', { eventId: upcoming });
+    expect(plan.candidates.filter((c: { suggested: boolean }) => c.suggested).map((c: { userId: string }) => c.userId)).toEqual([t.players.CF1.userId]);
     const stats = await h.run(t.managerId, 'getAttendanceStatistics', { teamId: t.teamId });
     expect(stats.some((s: { userId: string }) => s.userId === t.players.F1.userId)).toBe(false);
-    expect(stats.find((s: { userId: string }) => s.userId === t.players.F2.userId).regular).toEqual({ invitations: 2, yes: 2, no: 0, noResponse: 0 });
+    expect(stats.find((s: { userId: string }) => s.userId === t.players.F2.userId).regular).toEqual({ invitations: 2, yes: 2, no: 0, maybe: 0, noResponse: 0 });
   });
 
   it('#30 a player on several Teams: settings and permissions stay per Team', async () => {
@@ -169,32 +169,16 @@ describe('Membership (#18, #30–#32)', () => {
 });
 
 describe('Invariants and visibility (#36–#40)', () => {
-  it('#36 only YES, NO and NO_RESPONSE exist, in the database and the API', async () => {
+  it('#36 answers are YES, NO and MAYBE (wireframes 6, 7); nothing else gets in', async () => {
     const [{ values }] = await h.sql`select enum_range(null::public.attendance_response)::text[] as values`;
-    expect(values).toEqual(['YES', 'NO', 'NO_RESPONSE']);
+    expect(values).toEqual(['YES', 'NO', 'NO_RESPONSE', 'MAYBE']);
     const t = await buildTeam(h);
     const eventId = await releasedGame(h, t);
-    const forbiddenWord = ['MA', 'YBE'].join('');
-    expect(await h.fail(t.players.F1.userId, 'respondAttendance', { eventId, response: forbiddenWord })).toBe('INVALID_INPUT');
-    await expect(h.sql`update public.event_roster_players set response = ${forbiddenWord} where event_id = ${eventId}`).rejects.toThrow(
+    expect(await h.fail(t.players.F1.userId, 'respondAttendance', { eventId, response: 'PROBABLY' })).toBe('INVALID_INPUT');
+    expect(await h.fail(t.players.F1.userId, 'respondAttendance', { eventId, response: 'NO_RESPONSE' })).toBe('INVALID_INPUT');
+    await expect(h.sql`update public.event_roster_players set response = 'PROBABLY' where event_id = ${eventId}`).rejects.toThrow(
       /invalid input value for enum/,
     );
-  });
-
-  it('#36 the word never appears in source, schema or docs outside the spec itself', () => {
-    const root = new URL('../../', import.meta.url).pathname;
-    const pattern = new RegExp(['ma', 'ybe'].join(''), 'i');
-    const hits: string[] = [];
-    const walk = (dir: string) => {
-      for (const name of readdirSync(dir)) {
-        if (['node_modules', '.git', 'spec', '.expo'].includes(name)) continue;
-        const path = join(dir, name);
-        if (statSync(path).isDirectory()) walk(path);
-        else if (/\.(ts|tsx|sql|md|json|toml)$/.test(name) && pattern.test(readFileSync(path, 'utf8'))) hits.push(path.slice(root.length));
-      }
-    };
-    walk(root);
-    expect(hits.filter((p) => p !== 'package-lock.json')).toEqual([]);
   });
 
   it('#37 #38 players cannot read callup rankings, pools, targets or Positions', async () => {
@@ -203,6 +187,7 @@ describe('Invariants and visibility (#36–#40)', () => {
     const eventId = await releasedGame(h, t);
     await everyoneYes(h, t, eventId);
     await h.run(t.players.D1.userId, 'respondAttendance', { eventId, response: 'NO' });
+    await h.run(t.managerId, 'runCallupSelection', { eventId });
 
     const managerView = await h.asUser(t.managerId, async (tx) => ({
       pools: (await tx`select * from public.callup_pool_entries`).length,
@@ -221,17 +206,25 @@ describe('Invariants and visibility (#36–#40)', () => {
       }));
       expect(playerView).toEqual({ pools: 0, invites: 0, memberPositions: 0, eventPositions: 0, roster: 12 });
     }
+
+    // A callup sees their own invitation and the Position needed (wireframe 7B), never rank or pool.
+    const mine = await h.asUser(t.players.CF1.userId, (tx) => tx`select * from public.my_callup_invitations()`);
+    expect(mine).toEqual([expect.objectContaining({ event_id: eventId, position_name: 'Defence', response: 'NO_RESPONSE', closed: false })]);
+    expect(Object.keys(mine[0]).sort()).toEqual(['closed', 'event_id', 'invited_at', 'position_name', 'response']);
+    expect(await h.asUser(t.players.F1.userId, (tx) => tx`select * from public.my_callup_invitations()`)).toEqual([]);
   });
 
-  it('#39 a callup receives exactly the same invitation as a regular player', async () => {
+  it('#39 a callup is told it is a callup invitation, without rank or pool (wireframe 7A)', async () => {
     const t = await buildTeam(h, { callups: [['CF1', 'Forward']] });
     const eventId = await releasedGame(h, t);
     await everyoneYes(h, t, eventId);
     await h.run(t.players.F1.userId, 'respondAttendance', { eventId, response: 'NO' });
+    await h.run(t.managerId, 'runCallupSelection', { eventId });
     const [regular] = await notificationsFor(h, t.players.F2.userId, 'EVENT_INVITATION');
-    const [callup] = await notificationsFor(h, t.players.CF1.userId, 'EVENT_INVITATION');
-    expect(callup).toEqual(regular);
-    expect(JSON.stringify(callup)).not.toMatch(/callup/i);
+    const [callup] = await notificationsFor(h, t.players.CF1.userId, 'CALLUP_INVITATION');
+    expect(JSON.stringify(regular)).not.toMatch(/callup/i);
+    expect(callup).toMatchObject({ title: 'Callup Opportunity', event_id: eventId });
+    expect(JSON.stringify(callup)).not.toMatch(/rank|pool/i);
   });
 
   it('#40 an accepted callup is indistinguishable from an accepted player in what players can read', async () => {
@@ -239,6 +232,7 @@ describe('Invariants and visibility (#36–#40)', () => {
     const eventId = await releasedGame(h, t);
     await everyoneYes(h, t, eventId);
     await h.run(t.players.F1.userId, 'respondAttendance', { eventId, response: 'NO' });
+    await h.run(t.managerId, 'runCallupSelection', { eventId });
     await h.run(t.players.CF1.userId, 'respondAttendance', { eventId, response: 'YES' });
 
     await expect(h.asUser(t.players.F2.userId, (tx) => tx`select source from public.event_roster_players`)).rejects.toThrow(/permission denied/);

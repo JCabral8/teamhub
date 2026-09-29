@@ -33,6 +33,11 @@ export interface Team {
   accent_color: string | null;
   /** Path in the team-logos bucket. */
   logo_path: string | null;
+  /** Wireframe 2C: new Events get `callup_spots` callup spots when this is on. */
+  include_callups: boolean;
+  callup_spots: number;
+  /** Wireframe 6b: tell the roster when an Event is created. */
+  notify_new_events: boolean;
 }
 
 export interface MyMembership {
@@ -44,7 +49,7 @@ export interface MyMembership {
 }
 
 const TEAM_COLUMNS =
-  'id, name, timezone, arena, default_location, join_code, attendance_mode, release_days_before, release_time, reminder_enabled, reminder_hours_before, callup_mode, callup_selection_method, goalie_enabled, accent_color, logo_path';
+  'id, name, timezone, arena, default_location, join_code, attendance_mode, release_days_before, release_time, reminder_enabled, reminder_hours_before, callup_mode, callup_selection_method, goalie_enabled, accent_color, logo_path, include_callups, callup_spots, notify_new_events';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const OFFLINE ='Could not reach TeamHub. Check your connection and try again.';
@@ -150,12 +155,17 @@ export interface TeamEvent {
   location: string | null;
   notes: string | null;
   starts_at: string;
+  ends_at: string | null;
+  home_away: 'HOME' | 'AWAY' | null;
+  /** Extra roster spots only callups can take (wireframe 2D). */
+  callup_spots: number;
   release_state: 'UNSENT' | 'SCHEDULED' | 'RELEASED';
   release_at: string | null;
   release_action: 'RELEASE' | 'NOTIFY_MANAGER' | null;
 }
 
-const EVENT_COLUMNS = 'id, team_id, type, name, opponent, location, notes, starts_at, release_state, release_at, release_action';
+const EVENT_COLUMNS =
+  'id, team_id, type, name, opponent, location, notes, starts_at, ends_at, home_away, callup_spots, release_state, release_at, release_action';
 
 export async function loadEvents(teamIds: string[], range: { from?: Date; to?: Date } = {}): Promise<TeamEvent[]> {
   if (!teamIds.length) return [];
@@ -191,6 +201,7 @@ export interface CallupInvite {
   pool_key: string;
   rank: number;
   response: AttendanceResponse;
+  invited_at: string;
   closed_at: string | null;
 }
 
@@ -246,7 +257,7 @@ export async function loadEventDetail(eventId: string, managerOf: (teamId: strin
     invites = check(
       await supabase
         .from('callup_invitations')
-        .select('user_id, target_position_id, pool_key, rank, response, closed_at')
+        .select('user_id, target_position_id, pool_key, rank, response, invited_at, closed_at')
         .eq('event_id', eventId)
         .order('invited_at'),
     ) as CallupInvite[];
@@ -292,10 +303,11 @@ export interface AvailabilityBlock {
   id: string;
   start_date: string;
   end_date: string;
+  reason: string | null;
 }
 
 export async function loadAvailability(): Promise<AvailabilityBlock[]> {
-  return check(await supabase.from('availability_blocks').select('id, start_date, end_date').order('start_date')) as AvailabilityBlock[];
+  return check(await supabase.from('availability_blocks').select('id, start_date, end_date, reason').order('start_date')) as AvailabilityBlock[];
 }
 
 export async function markUnavailable(date: string): Promise<void> {
@@ -312,15 +324,16 @@ export interface Profile {
   display_name: string;
   preferred_position: string | null;
   avatar_path: string | null;
+  phone: string | null;
 }
 
 export async function loadProfile(userId: string): Promise<Profile> {
-  return check(await supabase.from('profiles').select('id, display_name, preferred_position, avatar_path').eq('id', userId).single()) as Profile;
+  return check(await supabase.from('profiles').select('id, display_name, preferred_position, avatar_path, phone').eq('id', userId).single()) as Profile;
 }
 
 export async function saveProfile(
   userId: string,
-  patch: { display_name: string; preferred_position: string | null } | { avatar_path: string | null },
+  patch: { display_name: string; preferred_position: string | null; phone?: string | null } | { avatar_path: string | null },
 ): Promise<void> {
   check(await supabase.from('profiles').update(patch).eq('id', userId));
 }
@@ -363,8 +376,35 @@ export async function loadManagerAlerts(teamIds: string[], releasedEventIds: str
   return alerts;
 }
 
-/** Marks a date range unavailable (spec §57). */
-export async function markUnavailableRange(start: string, end: string): Promise<void> {
-  const { error } = await supabase.from('availability_blocks').insert({ start_date: start, end_date: end });
+/** Marks a date range unavailable (spec §57, wireframe 4a). */
+export async function markUnavailableRange(start: string, end: string, reason: string | null): Promise<void> {
+  const { error } = await supabase.from('availability_blocks').insert({ start_date: start, end_date: end, reason });
   if (error) check({ data: null, error: error.code === '42501' ? { message: 'Past dates cannot be marked unavailable.' } : error });
+}
+
+export interface MyCallup {
+  event_id: string;
+  /** The Position the callup is for (wireframe 7B "Position Needed"). */
+  position_name: string | null;
+  response: AttendanceResponse;
+  /** The Manager took them off the list, or the spot was filled ("No Longer Needed"). */
+  closed: boolean;
+  invited_at: string;
+}
+
+/** The signed-in person's own callup invitations, latest per Event. No rank or pool (wireframe 7). */
+export async function loadMyCallups(): Promise<Map<string, MyCallup>> {
+  const rows = check(await supabase.rpc('my_callup_invitations')) as MyCallup[];
+  return new Map(rows.map((r) => [r.event_id, r]));
+}
+
+export interface CallupCandidate {
+  userId: string;
+  membershipId: string;
+  displayName: string;
+  positionId: string | null;
+  acceptedCount: number;
+  unavailable: boolean;
+  onEvent: boolean;
+  suggested: boolean;
 }

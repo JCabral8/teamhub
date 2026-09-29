@@ -11,6 +11,7 @@ export interface RegularAttendanceStats {
   invitations: number;
   yes: number;
   no: number;
+  maybe: number;
   noResponse: number;
 }
 
@@ -18,6 +19,7 @@ export interface CallupAttendanceStats {
   invitations: number;
   accepted: number;
   declined: number;
+  maybe: number;
   noResponse: number;
 }
 
@@ -39,8 +41,8 @@ export function computeAttendanceStatistics(records: AttendanceRecord[]): Player
     if (!s) {
       s = {
         userId: r.userId,
-        regular: { invitations: 0, yes: 0, no: 0, noResponse: 0 },
-        callup: { invitations: 0, accepted: 0, declined: 0, noResponse: 0 },
+        regular: { invitations: 0, yes: 0, no: 0, maybe: 0, noResponse: 0 },
+        callup: { invitations: 0, accepted: 0, declined: 0, maybe: 0, noResponse: 0 },
       };
       byUser.set(r.userId, s);
     }
@@ -48,11 +50,13 @@ export function computeAttendanceStatistics(records: AttendanceRecord[]): Player
       s.callup.invitations++;
       if (r.response === 'YES') s.callup.accepted++;
       else if (r.response === 'NO') s.callup.declined++;
+      else if (r.response === 'MAYBE') s.callup.maybe++;
       else s.callup.noResponse++;
     } else {
       s.regular.invitations++;
       if (r.response === 'YES') s.regular.yes++;
       else if (r.response === 'NO') s.regular.no++;
+      else if (r.response === 'MAYBE') s.regular.maybe++;
       else s.regular.noResponse++;
     }
   }

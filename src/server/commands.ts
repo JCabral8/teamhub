@@ -15,6 +15,8 @@ function requirementList(p: Params) {
   return v.list(p, 'requirements').map((r) => ({ positionId: v.uuid(r as Params, 'positionId'), quantity: v.int(r as Params, 'quantity', 0, 99) }));
 }
 
+const HOME_AWAY = ['HOME', 'AWAY'] as const;
+
 function eventFields(p: Params) {
   return {
     type: v.oneOf(p, 'type', EVENT_TYPES),
@@ -22,8 +24,11 @@ function eventFields(p: Params) {
     opponent: v.text(p, 'opponent', { max: 80, optional: true }),
     location: v.text(p, 'location', { max: 200, optional: true }),
     notes: v.text(p, 'notes', { max: 1000, optional: true }),
+    homeAway: p.homeAway == null ? null : v.oneOf(p, 'homeAway', HOME_AWAY),
   };
 }
+
+const optionalBool = (p: Params, field: string) => (p[field] == null ? undefined : v.bool(p, field));
 
 type Handler = (ctx: CommandContext, p: Params) => Promise<unknown>;
 
@@ -58,6 +63,9 @@ export const commands: Record<string, Handler> = {
       }),
       ...(v.has(p, 'accentColor') && { accentColor: v.hexColor(p, 'accentColor') }),
       ...(v.has(p, 'logoPath') && { logoPath: v.text(p, 'logoPath', { max: 200, optional: true }) }),
+      ...(v.has(p, 'includeCallups') && { includeCallups: v.bool(p, 'includeCallups') }),
+      ...(v.has(p, 'callupSpots') && { callupSpots: v.int(p, 'callupSpots', 0, 20) }),
+      ...(v.has(p, 'notifyNewEvents') && { notifyNewEvents: v.bool(p, 'notifyNewEvents') }),
     }),
   regenerateJoinCode: (ctx, p) => teams.regenerateJoinCode(ctx, v.uuid(p, 'teamId')),
   requestToJoin: (ctx, p) => teams.requestToJoin(ctx, v.text(p, 'joinCode', { max: 64 })),
@@ -87,7 +95,13 @@ export const commands: Record<string, Handler> = {
     teams.setCallupPoolOrder(ctx, v.uuid(p, 'teamId'), v.text(p, 'poolKey', { max: 64 }), v.uuidList(p, 'userIds')),
 
   // Events (Phase 4)
-  createEvent: (ctx, p) => events.createEvent(ctx, v.uuid(p, 'teamId'), { ...eventFields(p), startsAt: v.isoInstant(p, 'startsAt') }),
+  createEvent: (ctx, p) =>
+    events.createEvent(
+      ctx,
+      v.uuid(p, 'teamId'),
+      { ...eventFields(p), startsAt: v.isoInstant(p, 'startsAt'), endsAt: p.endsAt == null ? null : v.isoInstant(p, 'endsAt') },
+      optionalBool(p, 'notifyPlayers'),
+    ),
   createEvents: (ctx, p) => {
     const dates = v.list(p, 'dates');
     return events.createEvents(
@@ -96,6 +110,8 @@ export const commands: Record<string, Handler> = {
       eventFields(p),
       v.clockTime(p, 'time'),
       dates.map((date) => v.localDateField({ dates: date }, 'dates')),
+      p.endTime == null ? null : v.clockTime(p, 'endTime'),
+      optionalBool(p, 'notifyPlayers'),
     );
   },
   updateEvent: (ctx, p) =>
@@ -106,9 +122,12 @@ export const commands: Record<string, Handler> = {
       ...(v.has(p, 'location') && { location: v.text(p, 'location', { max: 200, optional: true }) }),
       ...(v.has(p, 'notes') && { notes: v.text(p, 'notes', { max: 1000, optional: true }) }),
       ...(v.has(p, 'startsAt') && { startsAt: v.isoInstant(p, 'startsAt') }),
+      ...(v.has(p, 'endsAt') && { endsAt: p.endsAt === null ? null : v.isoInstant(p, 'endsAt') }),
+      ...(v.has(p, 'homeAway') && { homeAway: p.homeAway === null ? null : v.oneOf(p, 'homeAway', HOME_AWAY) }),
     }),
   deleteEvent: (ctx, p) => events.deleteEvent(ctx, v.uuid(p, 'eventId')),
-  setEventRequirements: (ctx, p) => attendance.setEventRequirements(ctx, v.uuid(p, 'eventId'), requirementList(p)),
+  setEventRequirements: (ctx, p) =>
+    attendance.setEventRequirements(ctx, v.uuid(p, 'eventId'), requirementList(p), v.has(p, 'callupSpots') ? v.int(p, 'callupSpots', 0, 20) : undefined),
   addEventPlayer: (ctx, p) =>
     attendance.addEventPlayer(ctx, v.uuid(p, 'eventId'), v.uuid(p, 'membershipId'), v.bool(p, 'sendAttendanceRequest')),
   removeEventPlayer: (ctx, p) => attendance.removeEventPlayer(ctx, v.uuid(p, 'eventId'), v.uuid(p, 'userId')),
@@ -118,17 +137,29 @@ export const commands: Record<string, Handler> = {
   scheduleAttendance: (ctx, p) =>
     attendance.scheduleAttendanceLater(ctx, v.uuid(p, 'eventId'), v.localDateField(p, 'date'), v.clockTime(p, 'time')),
   holdAttendance: (ctx, p) => attendance.holdAttendance(ctx, v.uuid(p, 'eventId')),
+  previewAttendance: (ctx, p) => attendance.previewAttendance(ctx, v.uuid(p, 'eventId')),
+  approvePendingPlayer: (ctx, p) => attendance.decidePendingPlayer(ctx, v.uuid(p, 'eventId'), v.uuid(p, 'userId'), true),
+  declinePendingPlayer: (ctx, p) => attendance.decidePendingPlayer(ctx, v.uuid(p, 'eventId'), v.uuid(p, 'userId'), false),
   respondAttendance: (ctx, p) =>
     attendance.respondAttendance(
       ctx,
       v.uuid(p, 'eventId'),
-      v.oneOf(p, 'response', ['YES', 'NO'] as const),
+      v.oneOf(p, 'response', ['YES', 'NO', 'MAYBE'] as const),
       v.has(p, 'reason') && typeof p.reason === 'string' ? p.reason : null,
     ),
 
   // Callups (Phase 6)
   closeCallupInvitation: (ctx, p) => attendance.closeCallupInvitation(ctx, v.uuid(p, 'eventId'), v.uuid(p, 'userId')),
   runCallupSelection: (ctx, p) => attendance.runCallupSelection(ctx, v.uuid(p, 'eventId')),
+  getCallupCandidates: (ctx, p) =>
+    attendance.getCallupCandidates(
+      ctx,
+      v.uuid(p, 'eventId'),
+      p.method == null ? undefined : v.oneOf(p, 'method', ['RANDOMIZED_ROTATION', 'PREDETERMINED_SEQUENCE'] as const),
+    ),
+  inviteCallups: (ctx, p) => attendance.inviteCallups(ctx, v.uuid(p, 'eventId'), v.uuidList(p, 'userIds')),
+  setCallupResponse: (ctx, p) =>
+    attendance.setCallupResponse(ctx, v.uuid(p, 'eventId'), v.uuid(p, 'userId'), v.oneOf(p, 'response', ['YES', 'NO', 'NO_RESPONSE'] as const)),
 
   // Statistics (Phase 7)
   getAttendanceStatistics: (ctx, p) => stats.getAttendanceStatistics(ctx, v.uuid(p, 'teamId')),
