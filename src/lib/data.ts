@@ -136,7 +136,7 @@ export async function loadTeamDetail(team: Team, isManager: boolean): Promise<Te
     .sort((a, b) => a.display_name.localeCompare(b.display_name));
 
   // Read the Goalie flag fresh: the Team passed in can be a moment old right after a settings change.
-  const fresh = check(await supabase.from('teams').select('goalie_enabled').eq('id', team.id).maybeSingle()) as { goalie_enabled: boolean } | null;
+  const [fresh] = check(await supabase.from('teams').select('goalie_enabled').eq('id', team.id).limit(1)) as { goalie_enabled: boolean }[];
   const goalieEnabled = fresh?.goalie_enabled ?? team.goalie_enabled;
   return { positions, config: { positions, goalieEnabled }, requirements, members };
 }
@@ -209,7 +209,7 @@ export async function loadEventDetail(eventId: string, managerOf: (teamId: strin
   // Row-level security hides Events of Teams you left, so "deleted" and "no access" look the same.
   const gone = "This Event was deleted, or you're no longer on its Team.";
   if (!UUID.test(eventId ?? '')) throw new Error(gone);
-  const event = check(await supabase.from('events').select(EVENT_COLUMNS).eq('id', eventId).maybeSingle()) as TeamEvent | null;
+  const [event] = check(await supabase.from('events').select(EVENT_COLUMNS).eq('id', eventId).limit(1)) as TeamEvent[];
   if (!event) throw new Error(gone);
   const isManager = managerOf(event.team_id);
   const requirements = (

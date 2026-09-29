@@ -1,5 +1,5 @@
 // The signed-in player's own answer (spec §31, §32, §37; wireframes 6B–6E and 4A–4B). Yes and No
-// only: the app has no Maybe. Every answer is confirmed in a dialog before it is saved.
+// only: there is no third answer. Every answer is confirmed in a dialog before it is saved.
 import { useEffect, useState, type ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { DECLINE_REASON_MAX_LENGTH, standingOf, type EventRosterEntry, type RosterStanding } from '../../domain/index.ts';
