@@ -6,7 +6,9 @@ import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import type { TeamMember } from '../../lib/data';
 import { useAction } from '../../lib/hooks';
+import { shareOrCopy } from '../../lib/share';
 import { useTeams } from '../../lib/teams';
+import { joinLink } from '../../ui/format';
 import { Badge, Button, ButtonRow, Card, Chips, ErrorText, ListRow, SectionLabel, Sheet } from '../../ui/components';
 import { font, space } from '../../ui/theme';
 import type { SectionProps } from './types';
@@ -30,8 +32,19 @@ export function MemberSettings({ membership, detail, reload }: SectionProps) {
   const active = detail.members.filter((m) => m.status === 'ACTIVE');
   const [selected, setSelected] = useState<TeamMember | null>(null);
 
+  const [copied, setCopied] = useState(false);
+  const shareLink = async () => {
+    const link = joinLink(membership.team.join_code);
+    if (await shareOrCopy(`Join ${membership.team.name} on TeamHub: ${link}`, link)) setCopied(true);
+  };
+
   return (
     <>
+      <Card>
+        <Text style={font.heading}>Invite Players</Text>
+        <Text style={font.small}>Share the join link in your team chat. Everyone who uses it shows up here for you to approve.</Text>
+        <Button label={copied ? 'Join Link Copied' : 'Share Join Link'} icon={copied ? 'checkmark' : 'share-outline'} onPress={() => void shareLink()} />
+      </Card>
       <SectionLabel>{`Join requests (${pending.length})`}</SectionLabel>
       {pending.length ? (
         pending.map((m) => <JoinRequest key={m.id} member={m} positionOptions={positionOptions} reload={reload} />)
@@ -40,7 +53,7 @@ export function MemberSettings({ membership, detail, reload }: SectionProps) {
       )}
 
       <SectionLabel>{`Members (${active.length})`}</SectionLabel>
-      <Card style={{ paddingVertical: 0 }}>
+      <Card flush>
         {active.map((m, i) => (
           <ListRow
             key={m.id}

@@ -334,3 +334,37 @@ export async function loadCallupPoolOrder(teamId: string): Promise<Record<string
   for (const r of rows) (order[r.pool_key] ??= []).push(r.user_id);
   return order;
 }
+
+export interface ManagerAlerts {
+  /** Join requests waiting, by Team id. */
+  joinRequests: Map<string, number>;
+  /** People who haven't answered, by Event id (released Events only). */
+  noResponse: Map<string, number>;
+  /** Callup invitations still waiting for an answer, by Event id. */
+  openCallups: Map<string, number>;
+}
+
+/** What needs a Manager's attention on Home: join requests, unanswered attendance, callups waiting. */
+export async function loadManagerAlerts(teamIds: string[], releasedEventIds: string[]): Promise<ManagerAlerts> {
+  const alerts: ManagerAlerts = { joinRequests: new Map(), noResponse: new Map(), openCallups: new Map() };
+  const bump = (map: Map<string, number>, key: string) => map.set(key, (map.get(key) ?? 0) + 1);
+  if (teamIds.length) {
+    const rows = check(await supabase.from('team_memberships').select('team_id').in('team_id', teamIds).eq('status', 'PENDING')) as { team_id: string }[];
+    for (const r of rows) bump(alerts.joinRequests, r.team_id);
+  }
+  if (releasedEventIds.length) {
+    const [lines, invites] = await Promise.all([
+      supabase.from('event_roster_players').select('event_id').in('event_id', releasedEventIds).is('removed_at', null).eq('response', 'NO_RESPONSE'),
+      supabase.from('callup_invitations').select('event_id').in('event_id', releasedEventIds).eq('response', 'NO_RESPONSE').is('closed_at', null),
+    ]);
+    for (const r of check(lines) as { event_id: string }[]) bump(alerts.noResponse, r.event_id);
+    for (const r of check(invites) as { event_id: string }[]) bump(alerts.openCallups, r.event_id);
+  }
+  return alerts;
+}
+
+/** Marks a date range unavailable (spec §57). */
+export async function markUnavailableRange(start: string, end: string): Promise<void> {
+  const { error } = await supabase.from('availability_blocks').insert({ start_date: start, end_date: end });
+  if (error) check({ data: null, error: error.code === '42501' ? { message: 'Past dates cannot be marked unavailable.' } : error });
+}

@@ -1,72 +1,62 @@
-// The top of an Event: logo vs logo for a Game with an opponent, then where and when.
-import Ionicons from '@expo/vector-icons/Ionicons';
+// The top of every Event screen (wireframes 1A–8A): the title, the type, then when and where.
 import { StyleSheet, Text, View } from 'react-native';
 import { localDate, localTime } from '../../domain/index.ts';
 import type { Team, TeamEvent } from '../../lib/data';
-import { OpponentLogo, TeamLogo } from '../../ui/Avatar';
-import { Card } from '../../ui/components';
-import { clock, eventTitle, longDate } from '../../ui/format';
+import { TeamLogo } from '../../ui/Avatar';
+import { Badge, DetailLine } from '../../ui/components';
+import { EVENT_TYPE_STYLE, EventTypeIcon } from '../../ui/EventTypeIcon';
+import { clock, matchTitle, shortDate } from '../../ui/format';
 import { colors, font, space } from '../../ui/theme';
 
-const LOGO = 72;
-
-export function EventHeader({ event, team, showTeamName }: { event: TeamEvent; team: Team; showTeamName: boolean }) {
+export function EventHeader({ event, team, showTeamName, compact }: { event: TeamEvent; team: Team; showTeamName?: boolean; compact?: boolean }) {
   const at = new Date(event.starts_at);
   const where = event.location ?? team.default_location ?? team.arena;
-  const matchup = event.type === 'GAME' && !!event.opponent?.trim();
   return (
-    <Card style={{ gap: space.lg }}>
-      {matchup ? (
-        <>
-          {event.name ? <Text style={[font.label, { textAlign: 'center' }]}>{event.name}</Text> : null}
-          <View style={styles.matchup}>
-            <View style={styles.side}>
-              <TeamLogo team={team} size={LOGO} />
-              <Text style={styles.teamName} numberOfLines={2}>
-                {team.name}
-              </Text>
-            </View>
-            <Text style={styles.vs}>vs</Text>
-            <View style={styles.side}>
-              <OpponentLogo name={event.opponent!} size={LOGO} avoid={team.accent_color} />
-              <Text style={styles.teamName} numberOfLines={2}>
-                {event.opponent!.trim()}
-              </Text>
-            </View>
-          </View>
-        </>
-      ) : (
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
-          <TeamLogo team={team} size={48} />
-          <View style={{ flex: 1 }}>
-            <Text style={font.title}>{eventTitle(event)}</Text>
-            {showTeamName ? <Text style={font.small}>{team.name}</Text> : null}
+    <View style={styles.wrap}>
+      <View style={styles.titleRow}>
+        <View style={{ flex: 1, gap: space.xs }}>
+          <Text style={styles.title}>{matchTitle(event, team.name)}</Text>
+          <View style={styles.typeRow}>
+            <EventTypeIcon type={event.type} size={26} />
+            <Text style={font.body}>{EVENT_TYPE_STYLE[event.type].label}</Text>
+            {showTeamName ? <Badge label={team.name} tone="primary" /> : null}
           </View>
         </View>
-      )}
-      <View style={{ gap: space.sm }}>
-        <Detail icon="time-outline" main={clock(localTime(at, team.timezone))} sub={longDate(localDate(at, team.timezone))} />
-        {where ? <Detail icon="location-outline" main={where} /> : null}
+        {!compact && <TeamLogo team={team} size={44} />}
       </View>
-    </Card>
-  );
-}
-
-function Detail({ icon, main, sub }: { icon: 'time-outline' | 'location-outline'; main: string; sub?: string }) {
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
-      <Ionicons name={icon} size={22} color={colors.textMuted} />
-      <View style={{ flex: 1 }}>
-        <Text style={[font.body, { fontWeight: '600' }]}>{main}</Text>
-        {sub ? <Text style={font.small}>{sub}</Text> : null}
+      <View style={{ gap: space.xs }}>
+        <DetailLine icon="calendar-outline">{shortDate(localDate(at, team.timezone))}</DetailLine>
+        <DetailLine icon="time-outline">{clock(localTime(at, team.timezone))}</DetailLine>
+        {where ? <DetailLine icon="location-outline">{where}</DetailLine> : null}
       </View>
     </View>
   );
 }
 
+/** Notes as the "Additional Information" bullet list. */
+export function AdditionalInfo({ notes }: { notes: string | null }) {
+  const lines = (notes ?? '')
+    .split(/\r?\n/)
+    .map((l) => l.replace(/^\s*[-•*]\s*/, '').trim())
+    .filter(Boolean);
+  if (!lines.length) return null;
+  return (
+    <View style={{ gap: space.xs }}>
+      <Text style={font.heading}>Additional Information</Text>
+      {lines.map((l, i) => (
+        <View key={i} style={styles.bullet}>
+          <Text style={font.body}>•</Text>
+          <Text style={[font.body, { flex: 1 }]}>{l}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
-  matchup: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space.md },
-  side: { flex: 1, alignItems: 'center', gap: space.sm },
-  teamName: { ...font.heading, textAlign: 'center' },
-  vs: { fontSize: 18, fontWeight: '700', color: colors.textFaint },
+  wrap: { gap: space.md },
+  titleRow: { flexDirection: 'row', gap: space.md, alignItems: 'flex-start' },
+  title: { fontSize: 22, fontWeight: '800', color: colors.text },
+  typeRow: { flexDirection: 'row', alignItems: 'center', gap: space.sm },
+  bullet: { flexDirection: 'row', gap: space.sm, paddingLeft: space.xs },
 });

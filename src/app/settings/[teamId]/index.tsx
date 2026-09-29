@@ -15,7 +15,7 @@ export default function TeamSettings() {
     <TeamAccent color={membership.team.accent_color}>
       <Screen>
         <Stack.Screen options={{ title: membership.team.name }} />
-        <Card style={{ paddingVertical: 0 }}>
+        <Card flush>
           {SETTINGS_SECTIONS.map((s, i) => (
             <ListRow
               key={s.key}

@@ -1,139 +1,102 @@
-// Manager release controls (spec §26–§29): SEND ATTENDANCE opens SEND NOW / SCHEDULE LATER.
+// Manager release controls (spec §26–§29; wireframe 1 "Attendance Scheduling Flow"): not yet sent,
+// scheduled, or sent. Send Attendance asks Send Now or Schedule Later.
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Text, View } from 'react-native';
-import { getSchedulableDateRange, getScheduleTimeOptions, isSchedulableDate, localDate, zonedToUtc } from '../../domain/index.ts';
+import { localDate, localTime } from '../../domain/index.ts';
 import { api } from '../../lib/api';
 import type { Team, TeamEvent } from '../../lib/data';
 import { useAction } from '../../lib/hooks';
 import { shareOrCopy } from '../../lib/share';
-import { Button, ButtonRow, Card, Chips, ErrorText, Notice, Sheet } from '../../ui/components';
-import { eventLink, eventTitle, eventWhen, longDate } from '../../ui/format';
-import { MonthCalendar } from '../../ui/MonthCalendar';
-import { TimeField } from '../../ui/TimeField';
+import { Button, ButtonRow, Dialog, ErrorText, Notice } from '../../ui/components';
+import { clock, eventLink, eventTitle, eventWhen, shortDate } from '../../ui/format';
 import { font, space, toneColors } from '../../ui/theme';
 
 export function SendAttendance({ event, team, onChanged }: { event: TeamEvent; team: Team; onChanged: () => void }) {
-  // One sheet with two steps: stacking a second modal while the first closes is unreliable on iOS.
-  const [step, setStep] = useState<'menu' | 'schedule' | null>(null);
+  const router = useRouter();
+  const [asking, setAsking] = useState(false);
+  const [copied, setCopied] = useState(false);
   const { busy, error, run } = useAction();
-
-  if (event.release_state === 'RELEASED') return <AttendanceSent event={event} team={team} />;
 
   const sendNow = () =>
     run(async () => {
       await api('sendAttendanceNow', { eventId: event.id });
-      setStep(null);
+      setAsking(false);
       onChanged();
     });
-
   const holdOff = () =>
     run(async () => {
       await api('holdAttendance', { eventId: event.id });
       onChanged();
     });
-
-  const scheduled = event.release_state === 'SCHEDULED' && event.release_at;
-  return (
-    <Card>
-      <Text style={font.heading}>Attendance</Text>
-      {scheduled ? (
-        <Text style={font.small}>
-          {event.release_action === 'NOTIFY_MANAGER'
-            ? `Manual mode: you'll be reminded to send attendance on ${eventWhen(event.release_at!, team.timezone)}. It has not been sent.`
-            : `Attendance will be sent automatically on ${eventWhen(event.release_at!, team.timezone)}.`}
-        </Text>
-      ) : (
-        <Text style={font.small}>Attendance has not been sent. Players won't be asked until you send it.</Text>
-      )}
-      <Button label="Send Attendance" icon="paper-plane-outline" onPress={() => setStep('menu')} />
-      {scheduled && <Button label="Hold Off" variant="ghost" busy={busy && !step} onPress={() => void holdOff()} />}
-      <ErrorText error={!step ? error : null} />
-
-      <Sheet visible={!!step} onClose={() => setStep(null)} title={step === 'schedule' ? 'Schedule Later' : 'Send Attendance'}>
-        {step === 'schedule' ? (
-          <ScheduleLater
-            event={event}
-            team={team}
-            onClose={() => setStep('menu')}
-            onDone={() => {
-              setStep(null);
-              onChanged();
-            }}
-          />
-        ) : (
-          <>
-            <Button label="Send Now" icon="paper-plane" busy={busy} onPress={() => void sendNow()} />
-            <Button label="Schedule Later" icon="calendar-outline" variant="secondary" onPress={() => setStep('schedule')} />
-            <ErrorText error={error} />
-          </>
-        )}
-      </Sheet>
-    </Card>
-  );
-}
-
-/**
- * No timestamp of when it was sent (spec §28). Players see the request inside TeamHub, and a link in
- * the team chat is how they hear about it when there's no phone app to push to.
- */
-function AttendanceSent({ event, team }: { event: TeamEvent; team: Team }) {
-  const [copied, setCopied] = useState(false);
-  const share = async () => {
-    const message = `Attendance is open for ${eventTitle(event)}, ${eventWhen(event.starts_at, team.timezone)}. Tap to answer: ${eventLink(event.id)}`;
-    if (await shareOrCopy(message)) setCopied(true);
+  const scheduleLater = () => {
+    setAsking(false);
+    router.push({ pathname: '/event/[id]/schedule-attendance', params: { id: event.id } });
   };
-  return (
-    <Notice tone="positive" title="Attendance Sent">
-      <Text style={[font.small, { color: toneColors.positive.fg }]}>Players can answer in TeamHub. Share the link in your team chat so they know.</Text>
-      <Button label={copied ? 'Message Copied' : 'Share to Team Chat'} icon={copied ? 'checkmark' : 'share-outline'} variant="secondary" onPress={() => void share()} />
-    </Notice>
-  );
-}
+  const open = (path: '/event/[id]/roster' | '/event/[id]/callups') => router.push({ pathname: path, params: { id: event.id } });
 
-function ScheduleLater({ event, team, onClose, onDone }: { event: TeamEvent; team: Team; onClose: () => void; onDone: () => void }) {
-  const startsAt = new Date(event.starts_at);
-  const range = getSchedulableDateRange(new Date(), startsAt, team.timezone);
-  const eventDate = localDate(startsAt, team.timezone);
-  const options = getScheduleTimeOptions(team.release_time);
-  const [date, setDate] = useState<string | null>(null);
-  const [choice, setChoice] = useState<string>(team.release_time); // Team default selected initially.
-  const [custom, setCustom] = useState<string | null>(null);
-  const { busy, error, setError, run } = useAction();
-  const time = choice === 'CUSTOM' ? custom : choice;
-
-  const submit = () =>
-    run(async () => {
-      if (!date) return setError('Choose a date.');
-      if (!time) return setError('Choose a time.');
-      const at = zonedToUtc(date, time, team.timezone);
-      if (at <= new Date()) return setError('Choose a time in the future.');
-      if (at >= startsAt) return setError('Attendance must be sent before the Event starts.');
-      await api('scheduleAttendance', { eventId: event.id, date, time });
-      onDone();
-    });
-
-  return (
-    <>
-      <Text style={font.body}>Event date: {longDate(eventDate)}</Text>
-      <Text style={font.small}>The Event date is circled. Dates after the Event and past dates can't be chosen.</Text>
-      <MonthCalendar
-        initialDate={range.first}
-        selected={date}
-        marks={{ [eventDate]: { highlight: true, dot: true } }}
-        isDisabled={(d) => !isSchedulableDate(d, range)}
-        onSelect={setDate}
-      />
-      {date && <Text style={font.heading}>{longDate(date)}</Text>}
-      <View style={{ gap: space.sm }}>
-        <Text style={font.label}>Time</Text>
-        <Chips options={[...options.map((o) => ({ value: o.time, label: o.label })), { value: 'CUSTOM', label: 'Custom Time' }]} value={choice} onChange={setChoice} />
-        {choice === 'CUSTOM' && <TimeField label="Custom time" value={custom} onChange={setCustom} />}
+  if (event.release_state === 'RELEASED') {
+    // No timestamp of when it was sent (spec §28). On the web there's no push, so a link in the team chat tells players.
+    const share = async () => {
+      const message = `Attendance is open for ${eventTitle(event)}, ${eventWhen(event.starts_at, team.timezone)}. Tap to answer: ${eventLink(event.id)}`;
+      if (await shareOrCopy(message)) setCopied(true);
+    };
+    return (
+      <View style={{ gap: space.md }}>
+        <Notice tone="positive" title="Attendance Sent">
+          <Text style={[font.small, { color: toneColors.positive.fg }]}>Players have been notified.</Text>
+        </Notice>
+        <ButtonRow>
+          <Button label="View Responses" variant="secondary" size="sm" onPress={() => open('/event/[id]/roster')} style={{ flex: 1 }} />
+          <Button label="Manage Callups" variant="secondary" size="sm" onPress={() => open('/event/[id]/callups')} style={{ flex: 1 }} />
+        </ButtonRow>
+        <Button label={copied ? 'Message Copied' : 'Share to Team Chat'} icon={copied ? 'checkmark' : 'share-outline'} variant="ghost" size="sm" onPress={() => void share()} />
       </View>
-      <ErrorText error={error} />
-      <ButtonRow>
-        <Button label="Back" variant="secondary" onPress={onClose} style={{ flex: 1 }} />
-        <Button label="Schedule" busy={busy} disabled={!date || !time} onPress={() => void submit()} style={{ flex: 1 }} />
-      </ButtonRow>
-    </>
+    );
+  }
+
+  const at = event.release_at ? new Date(event.release_at) : null;
+  const scheduled = event.release_state === 'SCHEDULED' && at;
+  return (
+    <View style={{ gap: space.md }}>
+      {scheduled ? (
+        <>
+          <Notice tone="attention" icon="alarm" title={event.release_action === 'NOTIFY_MANAGER' ? 'Reminder Scheduled' : 'Scheduled'}>
+            <Text style={[font.body, { color: toneColors.attention.fg }]}>
+              {shortDate(localDate(at, team.timezone), false)} • {clock(localTime(at, team.timezone))}
+            </Text>
+            {event.release_action === 'NOTIFY_MANAGER' ? (
+              <Text style={[font.small, { color: toneColors.attention.fg }]}>Manual mode: you'll be reminded to send it. Nothing goes out on its own.</Text>
+            ) : null}
+          </Notice>
+          <ButtonRow>
+            <Button label="Change Schedule" variant="secondary" size="sm" onPress={scheduleLater} style={{ flex: 1 }} />
+            <Button label="Send Now" size="sm" busy={busy && !asking} onPress={() => void sendNow()} style={{ flex: 1 }} />
+          </ButtonRow>
+          <Button label="Hold Off" variant="ghost" size="sm" disabled={busy} onPress={() => void holdOff()} />
+        </>
+      ) : (
+        <>
+          <Notice tone="neutral" icon="alarm-outline" title="Not yet sent">
+            No attendance request has been sent to the team.
+          </Notice>
+          <Button label="Send Attendance" onPress={() => setAsking(true)} />
+        </>
+      )}
+      <ErrorText error={!asking ? error : null} />
+
+      <Dialog visible={asking} onClose={() => setAsking(false)} title="Send Attendance" body="When would you like attendance sent for this Event?">
+        <View style={{ gap: space.xs }}>
+          <Button label="Send Now" busy={busy} onPress={() => void sendNow()} />
+          <Text style={[font.small, { textAlign: 'center' }]}>Sends the attendance request immediately.</Text>
+        </View>
+        <View style={{ gap: space.xs }}>
+          <Button label="Schedule Later" variant="secondary" onPress={scheduleLater} />
+          <Text style={[font.small, { textAlign: 'center' }]}>Choose a future date and time.</Text>
+        </View>
+        <Button label="Cancel" variant="neutral" onPress={() => setAsking(false)} />
+        <ErrorText error={error} />
+      </Dialog>
+    </View>
   );
 }

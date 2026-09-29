@@ -66,7 +66,7 @@ export function PositionSettings({ membership, detail, reload }: SectionProps) {
       </Card>
 
       <SectionLabel>Base Positions</SectionLabel>
-      <Card style={{ paddingVertical: 0 }}>
+      <Card flush>
         {bases.map((p, i) => (
           <ListRow
             key={p.id}

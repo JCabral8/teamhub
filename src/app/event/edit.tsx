@@ -1,17 +1,15 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Text } from 'react-native';
 import { EVENT_DATETIME_CHANGED_WARNING, handleEventChange, localDate, localTime, zonedToUtc } from '../../domain/index.ts';
 import { EventForm, ReleaseDecisionSheet, eventFormError, eventFormParams, teamDefaultLocation, type EventFormValue } from '../../features/event/EventForm';
 import { api } from '../../lib/api';
 import { loadEventDetail } from '../../lib/data';
 import { useAction, useLoader } from '../../lib/hooks';
 import { isManagerOf, useTeams } from '../../lib/teams';
-import { Button, Card, Empty, ErrorText, Loading, Notice, Screen, useConfirm } from '../../ui/components';
-import { longDate } from '../../ui/format';
+import { Button, Card, Empty, ErrorText, FieldButton, Loading, Notice, Screen, useConfirm } from '../../ui/components';
+import { shortDate } from '../../ui/format';
 import { MonthCalendar } from '../../ui/MonthCalendar';
 import { TimeField } from '../../ui/TimeField';
-import { font } from '../../ui/theme';
 import { TeamAccent } from '../../ui/TeamAccent';
 
 export default function EditEvent() {
@@ -23,6 +21,7 @@ export default function EditEvent() {
   const [date, setDate] = useState<string | null>(null);
   const [time, setTime] = useState<string | null>(null);
   const [askRelease, setAskRelease] = useState(false);
+  const [pickingDate, setPickingDate] = useState(false);
   const { busy, error, setError, run } = useAction();
   const confirm = useConfirm();
 
@@ -87,19 +86,26 @@ export default function EditEvent() {
 
   return (
     <TeamAccent color={team.accent_color}>
-      <Screen>
-        <Card>
-          <EventForm value={form} onChange={setForm} team={team} />
-        </Card>
-        <Card>
-          <MonthCalendar initialDate={date} selected={date} onSelect={setDate} />
-          <Text style={font.heading}>{longDate(date)}</Text>
-          <TimeField label="Start time" value={time} onChange={setTime} hint={`Times are in the Team's time zone (${team.timezone}).`} />
-        </Card>
+      <Screen footer={<Button label="Save Changes" busy={busy && !askRelease} onPress={() => void save()} />}>
+        <EventForm value={form} onChange={setForm} team={team}>
+          <FieldButton label="Date" required icon="calendar-outline" value={shortDate(date)} active={pickingDate} onPress={() => setPickingDate(!pickingDate)} />
+          {pickingDate && (
+            <Card>
+              <MonthCalendar
+                initialDate={date}
+                selected={date}
+                onSelect={(d) => {
+                  setDate(d);
+                  setPickingDate(false);
+                }}
+              />
+            </Card>
+          )}
+          <TimeField label="Start Time" required value={time} onChange={setTime} hint={`In the Team's time zone (${team.timezone}).`} />
+        </EventForm>
         {impact?.requiresNewRelease && <Notice tone="attention">{EVENT_DATETIME_CHANGED_WARNING}</Notice>}
         <ErrorText error={error} />
-        <Button label="Save Changes" busy={busy && !askRelease} onPress={() => void save()} />
-        <Button label="Delete Event" variant="danger" onPress={() => void remove()} />
+        <Button label="Delete Event" variant="danger" icon="trash-outline" onPress={() => void remove()} />
         <ReleaseDecisionSheet count={1} visible={askRelease} busy={busy} onSendNow={() => void decide(true)} onHoldOff={() => void decide(false)} />
         {confirm.element}
       </Screen>
